@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::str::FromStr;
 
 type ParseResult<'a, O> = Result<(Span<'a>, O), String>;
 
