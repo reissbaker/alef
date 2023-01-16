@@ -169,21 +169,30 @@ where L: Parser<'a, O>, R: Parser<'a, O> {
     }
 }
 
-fn ascii<'a>(character: char) -> impl FnMut(&Span<'a>) -> ParseResult<'a, char> {
-    map(byte(character as u8), |_, b| { (b as char) })
+fn ascii<'a>(character: char) -> impl Parser<'a, char> {
+    map(byte(character as u8), |b| { (b as char) })
 }
 
 fn map<'a, I, O, P, F>(mut target: P, f: F) -> impl FnMut(&Span<'a>) -> ParseResult<'a, O>
-where P: Parser<'a, I>, F: Fn(&Span<'a>, I) -> O {
+where P: Parser<'a, I>, F: Fn(I) -> O {
     move |span: &Span| {
         let start = span.start;
         let (remaining, output) = target.parse(span)?;
-        let consumed = Span { start, end: remaining.start, input: span.input };
-        Ok((remaining, f(&consumed, output)))
+        Ok((remaining, f(output)))
     }
 }
 
-fn expect_byte<'a, F>(msg: &'a str, f: F) -> impl FnMut(&Span<'a>) -> ParseResult<'a, u8>
+fn recognize<'a, I, O, P, F>(mut target: P, f: F) -> impl FnMut(&Span<'a>) -> ParseResult<'a, O>
+where P: Parser<'a, I>, F: Fn(&Span<'a>) -> O {
+    move |span: &Span| {
+        let start = span.start;
+        let (remaining, _) = target.parse(span)?;
+        let consumed = Span { start, end: remaining.start, input: span.input };
+        Ok((remaining, f(&consumed)))
+    }
+}
+
+fn expect_byte<'a, F>(msg: &'a str, f: F) -> impl Parser<'a, u8>
 where F: Fn(u8) -> bool {
     move |span: &Span<'a>| {
         let current_byte = span.as_bytes()[0];
@@ -194,32 +203,33 @@ where F: Fn(u8) -> bool {
     }
 }
 
-fn alphanumeric<'a>() -> impl FnMut(&Span<'a>) -> ParseResult<'a, char> {
+fn alphanumeric<'a>() -> impl Parser<'a, char> {
     map(expect_byte("alphanumeric", |byte| {
         byte.is_ascii_alphanumeric()
-    }), |_, byte| {
-        byte as char
-    })
-}
-fn alphabetic<'a>() -> impl FnMut(&Span<'a>) -> ParseResult<'a, char> {
-    map(expect_byte("alphabetic", |byte| {
-        byte.is_ascii_alphabetic()
-    }), |_, byte| {
+    }), |byte| {
         byte as char
     })
 }
 
-fn id<'a>() -> impl FnMut(&Span<'a>) -> ParseResult<'a, Ast<'a>> {
-    map(seq(alphabetic(), count(alphanumeric())), |span, _| {
+fn alphabetic<'a>() -> impl Parser<'a, char> {
+    map(expect_byte("alphabetic", |byte| {
+        byte.is_ascii_alphabetic()
+    }), |byte| {
+        byte as char
+    })
+}
+
+fn id<'a>() -> impl Parser<'a, Ast<'a>> {
+    recognize(seq(alphabetic(), count(alphanumeric())), |span| {
         Ast::Identifier(span.as_str())
     })
 }
 
-fn call<'a>() -> impl FnMut(&Span<'a>) -> ParseResult<'a, Ast<'a>> {
+fn call<'a>() -> impl Parser<'a, Ast<'a>> {
     map(
-        ascii('(').then(any(id().then(any(ascii(' '))))).then(ascii(')')),
-        |_, output| {
-            let ((_, ids), _) = output;
+        ascii('(').then(opt(ascii(' '))).then(any(id().then(any(ascii(' '))))).then(ascii(')')),
+        |output| {
+            let (((_, _), ids), _) = output;
             match ids {
                 None => Ast::Nil,
                 Some(ids) => Ast::Call(ids.into_iter().map(|(id, _)| {
