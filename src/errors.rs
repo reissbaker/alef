@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use crate::span::{Span, Tracer};
 
 pub fn format_error<'a, T: Tracer<'a>, E: Debug + Clone + Copy>(e: ErrorPicker<'a, T, E>) -> String {
-    format!("Error at index {}:\n{}", e.get_span().start, e.get_messages().into_iter().map(|e| {
+    format!("Syntax error at index {}. Expected one of the following:\n{}", e.get_span().start, e.get_messages().into_iter().map(|e| {
         format!("{:?}", e)
     }).collect::<Vec<String>>().join("\n"))
 }
