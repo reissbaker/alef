@@ -1,26 +1,44 @@
-pub trait Tracer<'a> where Self: std::fmt::Debug + Clone + Copy {
+use std::fmt::Debug;
+
+#[derive(Debug, Clone, Copy)]
+pub enum Trace {
+    StartParse,
+    Err,
+    Consume(usize),
+    Ok(Option<()>),
+}
+
+pub trait Tracer<'a> where Self: Debug + Clone + Copy {
     #[cfg(debug_assertions)]
-    fn trace_consume(self, count: usize, span: &Span<'a, Self>);
-    #[cfg(debug_assertions)]
-    fn trace(self, msg: &str, span: &Span<'a, Self>);
+    fn trace(self, traced: Trace, span: &Span<'a, Self>);
 }
 impl<'a> Tracer<'a> for () {
     #[cfg(debug_assertions)]
-    fn trace_consume(self, _: usize, _: &Span<'a, ()>) {}
-    #[cfg(debug_assertions)]
-    fn trace(self, _: &str, _: &Span<'a, Self>) {}
+    fn trace(self, _: Trace, _: &Span<'a, Self>) {}
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PrintlnTracer {}
 impl<'a> Tracer<'a> for PrintlnTracer {
     #[cfg(debug_assertions)]
-    fn trace_consume(self, count: usize, span: &Span<'a, PrintlnTracer>) {
-        println!("Consuming {} from index {}", count, span.start);
-    }
-    #[cfg(debug_assertions)]
-    fn trace(self, msg: &str, _: &Span<'a, PrintlnTracer>) {
-        println!("Trace: {}", msg);
+    fn trace(self, trace: Trace, span: &Span<'a, PrintlnTracer>) {
+        match trace {
+            Trace::StartParse => {
+                println!("Trace index {}: Starting parse...", span.start);
+            }
+            Trace::Err => {
+                println!("Trace index {}: Errored", span.start);
+            }
+            Trace::Consume(count) => {
+                println!("Trace index {}: consume({})", span.start, count);
+            }
+            Trace::Ok(Some(_)) => {
+                println!("Traced index {}: Ok with trailing error", span.start);
+            }
+            Trace::Ok(None) => {
+                println!("Traced index {}: Ok", span.start);
+            }
+        }
     }
 }
 
@@ -43,7 +61,7 @@ impl<'a, T: Tracer<'a>> Span<'a, T> {
 
     pub fn consume(&self, count: usize) -> Span<'a, T> {
         #[cfg(debug_assertions)]
-        self.tracer.trace_consume(count, self);
+        self.tracer.trace(Trace::Consume(count), self);
 
         Span {
             start: self.start + count,
@@ -60,7 +78,7 @@ impl<'a, T: Tracer<'a>> Span<'a, T> {
     }
 
     #[cfg(debug_assertions)]
-    pub fn trace(&self, msg: &str) {
-        self.tracer.trace(msg, self);
+    pub fn trace(&self, trace: Trace) {
+        self.tracer.trace(trace, self);
     }
 }

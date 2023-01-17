@@ -1,7 +1,15 @@
 use std::marker::PhantomData;
-use crate::span::{Span, Tracer, PrintlnTracer};
-use crate::errors::ErrorCollector;
+use std::fmt::Debug;
+use crate::span::{Span, Tracer, Trace, PrintlnTracer};
+use crate::errors::{format_error, ErrorPicker, ParseError};
 
+#[derive(Debug, Clone, Copy)]
+pub enum ErrorKinds {
+    Alphanumeric,
+    Alphabetic,
+}
+
+type ErrorCollector<'a, T> = ErrorPicker<'a, T, ErrorKinds>;
 type ParseResult<'a, O, T> = Result<(Span<'a, T>, O, Option<ErrorCollector<'a, T>>), ErrorCollector<'a, T>>;
 
 pub trait Parser<'a, O, T: Tracer<'a>> where Self: Sized {
@@ -9,16 +17,24 @@ pub trait Parser<'a, O, T: Tracer<'a>> where Self: Sized {
 
     fn parse(&mut self, span: &Span<'a, T>) -> ParseResult<'a, O, T> {
         #[cfg(debug_assertions)]
-        span.trace("Starting parse...");
-        // TODO DO WAY BETTER TRACING THIS IS SO SLOW
+        span.trace(Trace::StartParse);
         let result = self.do_parse(span);
+
+        // Skip tracing if we're not in debug mode
+        #[cfg(not(debug_assertions))]
+        return result;
+
+        // Trace if we're in debug mode
+        #[cfg(debug_assertions)]
         match result {
             Err(e) => {
-                span.trace(&format!("finished with error {:?}", e));
+                // TODO: trace should accept error kinds
+                span.trace(Trace::Err);
                 Err(e)
             }
             Ok((remaining, data, e)) => {
-                span.trace(&format!("trailing e: {:?}", e));
+                // TODO: ditto
+                span.trace(Trace::Ok(e.as_ref().map(|_| ())));
                 Ok((remaining, data, e))
             }
         }
@@ -27,6 +43,30 @@ pub trait Parser<'a, O, T: Tracer<'a>> where Self: Sized {
     fn then<ONext, PNext>(self, next: PNext) -> Seq<'a, T, O, ONext, Self, PNext>
     where PNext: Parser<'a, ONext, T> {
         seq(self, next)
+    }
+
+    fn or<P: Parser<'a, O, T>>(self, target: P) -> Choose<'a, T, O, Self, P> {
+        choose(self, target)
+    }
+
+    fn opt(self) -> Opt<'a, T, O, Self> {
+        opt(self)
+    }
+
+    fn any(self) -> Any<'a, T, O, Self> {
+        any(self)
+    }
+
+    fn many(self) -> Many<'a, T, O, Self> {
+        many(self)
+    }
+
+    fn map<O2, F: Fn(O) -> O2>(self, cb: F) -> Map<'a, T, O, O2, Self, F> {
+        map(self, cb)
+    }
+
+    fn map_span<O2, F: Fn(&Span<'a, T>) -> O2>(self, cb: F) -> SpanMap<'a, T, O, O2, Self, F> {
+        map_span(self, cb)
     }
 }
 
@@ -42,7 +82,7 @@ fn byte<'a, T: Tracer<'a>>(b: u8) -> impl FnMut(&Span<'a, T>) -> ParseResult<'a,
         if next_byte == b {
             return Ok((span.consume(1), next_byte, None));
         }
-        Err(ErrorCollector::new(*span, format!("Expected byte {}", b)))
+        Err(ErrorCollector::new(*span, ParseError::Byte(b)))
     }
 }
 
@@ -52,7 +92,7 @@ fn ascii<'a, T: Tracer<'a>>(c: char) -> impl FnMut(&Span<'a, T>) -> ParseResult<
         if next_byte == (c as u8) {
             return Ok((span.consume(1), next_byte as char, None));
         }
-        Err(ErrorCollector::new(*span, format!("Expected char '{}'", c)))
+        Err(ErrorCollector::new(*span, ParseError::Char(c)))
     }
 }
 
@@ -291,7 +331,7 @@ where T: Tracer<'a>, P: Parser<'a, I, T>, F: Fn(&Span<'a, T>) -> O {
         Ok((remaining, (self.cb)(&consumed), e))
     }
 }
-fn span<'a, T, I, O, P, F>(target: P, cb: F) -> SpanMap<'a, T, I, O, P, F>
+fn map_span<'a, T, I, O, P, F>(target: P, cb: F) -> SpanMap<'a, T, I, O, P, F>
 where T: Tracer<'a>, P: Parser<'a, I, T>, F: Fn(&Span<'a, T>) -> O {
     SpanMap {
         target, cb,
@@ -299,35 +339,35 @@ where T: Tracer<'a>, P: Parser<'a, I, T>, F: Fn(&Span<'a, T>) -> O {
     }
 }
 
-fn expect_byte<'a, T: Tracer<'a>, F>(msg: &'a str, f: F) -> impl Parser<'a, u8, T>
+fn expect_byte<'a, T: Tracer<'a>, F>(e: ParseError<ErrorKinds>, f: F) -> impl FnMut(&Span<'a, T>) -> ParseResult<'a, u8, T>
 where F: Fn(u8) -> bool {
     move |span: &Span<'a, T>| {
         let current_byte = span.as_bytes()[0];
         if f(current_byte) {
             return Ok((span.consume(1), current_byte, None));
         }
-        Err(ErrorCollector::new(*span, msg.to_string()))
+        Err(ErrorCollector::new(*span, e))
     }
 }
 
 fn alphanumeric<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
-    map(expect_byte("alphanumeric", |byte| {
+    expect_byte(ParseError::Kind(ErrorKinds::Alphanumeric), |byte| {
         byte.is_ascii_alphanumeric()
-    }), |byte| {
+    }).map(|byte| {
         byte as char
     })
 }
 
 fn alphabetic<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
-    map(expect_byte("alphabetic", |byte| {
+    expect_byte(ParseError::Kind(ErrorKinds::Alphabetic), |byte| {
         byte.is_ascii_alphabetic()
-    }), |byte| {
+    }).map(|byte| {
         byte as char
     })
 }
 
 fn id<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
-    span(alphabetic().then(count(alphanumeric())), |span| {
+    alphabetic().then(count(alphanumeric())).map_span(|span| {
         Ast::Identifier(span.as_str())
     })
 }
@@ -336,10 +376,16 @@ fn whitespace<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
     choose(ascii(' '), ascii('\n'))
 }
 
-fn call<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
-    map(
-        ascii('(').then(opt(ascii(' '))).then(any(id().then(any(ascii(' '))))).then(ascii(')')),
-        |output| {
+fn call<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
+    ascii('(')
+        .then(whitespace().any())
+        .then(
+            any(
+                id().or(call).then(whitespace().any())
+            )
+        )
+        .then(ascii(')'))
+        .map(|output| {
             let (((_, _), ids), _) = output;
             match ids {
                 None => Ast::Nil,
@@ -347,29 +393,43 @@ fn call<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
                     id
                 }).collect()),
             }
-        }
-    )
+        }).parse(input)
 }
 
 #[derive(Debug)]
 pub enum Ast<'a> {
     Call(Vec<Ast<'a>>),
     Identifier(&'a str),
+    Int(i64),
+    Float(f64),
     Nil,
 }
 
-pub fn parse<'a>(input: &'a str) -> Result<Ast<'a>, String> {
+pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, String> {
     if input.len() == 0 {
-        return Ok(Ast::Nil);
+        return Ok(vec![]);
     }
 
     let span = Span::new(input, ());
-    match call().parse(&span) {
-        Ok((_, output, _)) => {
+    let parsed = many(
+        whitespace().any()
+        .then(call)
+        .then(whitespace().any())
+        .map(|output| {
+            let ((_, calls), _) = output;
+            calls
+        })
+    ).parse(&span);
+
+    match parsed {
+        Ok((remaining, output, e)) => {
+            if remaining.as_bytes().len() != 0 {
+                return Err(format_error(e.unwrap()));
+            }
             Ok(output)
         }
         Err(e) => {
-            Err(format!("Error at index {}: {:?}", e.get_span().start, e.get_messages()))
+            Err(format_error(e))
         }
     }
 }
