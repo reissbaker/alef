@@ -1,4 +1,5 @@
 mod span;
+mod errors;
 mod parser;
 use parser::parse;
 
