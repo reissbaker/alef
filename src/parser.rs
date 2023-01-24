@@ -70,6 +70,10 @@ pub trait Parser<'a, O, T: Tracer<'a>> where Self: Sized {
     fn map_span<O2, F: Fn(&Span<'a, T>) -> O2>(self, cb: F) -> SpanMap<'a, T, O, O2, Self, F> {
         map_span(self, cb)
     }
+
+    fn count(self) -> Count<'a, T, O, Self> {
+        count(self)
+    }
 }
 
 impl<'a, O, T: Tracer<'a>, F: FnMut(&Span<'a, T>) -> ParseResult<'a, O, T>> Parser<'a, O, T> for F {
@@ -438,8 +442,16 @@ fn id<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
     })
 }
 
+fn space<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
+    ascii(' ')
+}
+
+fn newline<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
+    ascii('\n')
+}
+
 fn whitespace<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
-    choose(ascii(' '), ascii('\n'))
+    choose(space(), newline())
 }
 
 fn call<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
@@ -464,9 +476,9 @@ fn call<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>,
 
 fn dict<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
     ascii('{')
-        .then(whitespace().any())
-        .then(pairs)
-        .then(whitespace().any())
+        .then(whitespace().count())
+        .then(choose(pairs_oneline, pairs_multiline))
+        .then(whitespace().count())
         .then(ascii('}'))
         .map(|output| {
             let ((((_, _), pairs), _), _) = output;
@@ -475,8 +487,8 @@ fn dict<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>,
 }
 
 
-fn pairs<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>, T> {
-    any(seq(pair, ascii(',')).then(count(whitespace())))
+fn pairs_oneline<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>, T> {
+    any(seq(pair, whitespace().count()).then(ascii(',')).then(whitespace().count()))
         .then(pair)
         .then(ascii(',').opt())
         .map(|output| {
@@ -489,7 +501,7 @@ fn pairs<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<(&'
                 }
                 Some(pairs) => {
                     new_vec.extend(pairs.into_iter().map(|data| {
-                        let (((pair), _), _) = data;
+                        let (((pair, _), _), _) = data;
                         pair
                     }).collect::<Vec<(&'a str, Ast<'a>)>>());
                     new_vec.push(final_pair);
@@ -499,11 +511,32 @@ fn pairs<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<(&'
         }).parse(input)
 }
 
+fn pairs_multiline<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>, T> {
+    any(
+        seq(pair, space().count())
+            .then(ascii(',').opt())
+            .then(space().count())
+            .then(newline())
+            .then(whitespace().count())
+    )
+        .map(|output| {
+            match output {
+                None => vec![],
+                Some(output) => {
+                    output.into_iter().map(|item| {
+                        let (((((pair, _), _), _), _), _) = item;
+                        pair
+                    }).collect()
+                }
+            }
+        }).parse(input)
+}
+
 fn pair<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, (&'a str, Ast<'a>), T> {
     id_str()
-        .then(count(whitespace()))
+        .then(whitespace().count())
         .then(ascii(':'))
-        .then(count(whitespace()))
+        .then(whitespace().count())
         .then(expr)
         .map(|output| {
             let ((((id, _), _), _), ast) = output;

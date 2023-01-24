@@ -1,2 +1,3 @@
-(def boot { a: b }
-  (println hello))
+(def boot {
+  a: b
+} (println hello))
