@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Copy)]
@@ -24,19 +25,19 @@ impl<'a> Tracer<'a> for PrintlnTracer {
     fn trace(self, trace: Trace, span: &Span<'a, PrintlnTracer>) {
         match trace {
             Trace::StartParse => {
-                println!("Trace index {}: Starting parse...", span.start);
+                println!("Trace index {} ({}): Starting parse...", span.start, span.as_bytes()[0] as char);
             }
             Trace::Err => {
-                println!("Trace index {}: Errored", span.start);
+                println!("Trace index {} ({}): Errored", span.start, span.as_bytes()[0] as char);
             }
             Trace::Consume(count) => {
-                println!("Trace index {}: consume({})", span.start, count);
+                println!("Trace index {} ({}): consuming {} ({})", span.start, span.as_bytes()[0] as char, count, span.get_consumed(span.start + count).as_str());
             }
             Trace::Ok(Some(_)) => {
-                println!("Traced index {}: Ok with trailing error", span.start);
+                println!("Traced index {} ({}): Ok with trailing error", span.start, span.as_bytes()[0] as char);
             }
             Trace::Ok(None) => {
-                println!("Traced index {}: Ok", span.start);
+                println!("Traced index {} ({}): Ok", span.start, span.as_bytes()[0] as char);
             }
         }
     }
@@ -53,7 +54,8 @@ pub struct Span<'a, T: Tracer<'a>> {
 impl<'a, T: Tracer<'a>> Span<'a, T> {
     pub fn new(input: &'a str, tracer: T) -> Span<'a, T> {
         Span {
-            input, tracer,
+            input,
+            tracer,
             start: 0,
             end: input.len(),
         }
@@ -61,7 +63,7 @@ impl<'a, T: Tracer<'a>> Span<'a, T> {
 
     pub fn consume(&self, count: usize) -> Span<'a, T> {
         #[cfg(debug_assertions)]
-        self.tracer.trace(Trace::Consume(count), self);
+        self.trace(Trace::Consume(count));
 
         Span {
             start: self.start + count,
@@ -70,11 +72,25 @@ impl<'a, T: Tracer<'a>> Span<'a, T> {
             tracer: self.tracer,
         }
     }
+
+    pub fn get_consumed(&self, next_start: usize) -> Span<'a, T> {
+        Span {
+            start: self.start,
+            end: next_start,
+            input: self.input,
+            tracer: self.tracer,
+        }
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.input.as_bytes()[self.start..self.end]
     }
     pub fn as_str(&self) -> &'a str {
         &self.input[self.start..self.end]
+    }
+
+    pub fn len(&self) -> usize {
+        self.end - self.start
     }
 
     #[cfg(debug_assertions)]

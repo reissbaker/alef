@@ -7,10 +7,12 @@ use crate::errors::{format_error, ErrorPicker, ParseError};
 pub enum ErrorKinds {
     Alphanumeric,
     Alphabetic,
+    Digit,
 }
 
 type ErrorCollector<'a, T> = ErrorPicker<'a, T, ErrorKinds>;
-type ParseResult<'a, O, T> = Result<(Span<'a, T>, O, Option<ErrorCollector<'a, T>>), ErrorCollector<'a, T>>;
+type OkReturn<'a, O, T> = (Span<'a, T>, O, Option<ErrorCollector<'a, T>>);
+type ParseResult<'a, O, T> = Result<OkReturn<'a, O, T>, ErrorCollector<'a, T>>;
 
 pub trait Parser<'a, O, T: Tracer<'a>> where Self: Sized {
     fn do_parse(&mut self, span: &Span<'a, T>) -> ParseResult<'a, O, T>;
@@ -327,7 +329,7 @@ where T: Tracer<'a>, P: Parser<'a, I, T>, F: Fn(&Span<'a, T>) -> O {
     fn do_parse(&mut self, span: &Span<'a, T>) -> ParseResult<'a, O, T> {
         let start = span.start;
         let (remaining, _, e) = self.target.parse(span)?;
-        let consumed = Span { start, end: remaining.start, input: span.input, tracer: span.tracer };
+        let consumed = span.get_consumed(remaining.start);
         Ok((remaining, (self.cb)(&consumed), e))
     }
 }
@@ -336,6 +338,29 @@ where T: Tracer<'a>, P: Parser<'a, I, T>, F: Fn(&Span<'a, T>) -> O {
     SpanMap {
         target, cb,
         _phantom: PhantomData,
+    }
+}
+
+fn take_while<'a, T: Tracer<'a>, F: Fn(u8) -> bool>(e: ParseError<ErrorKinds>, f: F) -> impl FnMut(&Span<'a, T>) -> ParseResult<'a, &'a str, T> {
+    move |span: &Span<'a, T>| {
+        let mut count = 0;
+        let mut did_err = false;
+        for index in 0..span.len() {
+            let current_byte = span.as_bytes()[index];
+            if !f(current_byte) {
+                did_err = true;
+                break;
+            }
+            count += 1;
+        }
+        if count == 0 {
+            return Err(ErrorCollector::new(*span, e));
+        }
+        let new_span = span.consume(count);
+        if did_err {
+            return Ok((new_span, span.as_str(), Some(ErrorCollector::new(*span, e))));
+        }
+        Ok((new_span, span.as_str(), None))
     }
 }
 
@@ -348,6 +373,26 @@ where F: Fn(u8) -> bool {
         }
         Err(ErrorCollector::new(*span, e))
     }
+}
+
+fn digit<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
+    expect_byte(ParseError::Kind(ErrorKinds::Digit), |byte| {
+        byte.is_ascii_digit()
+    }).map(|byte| {
+        byte as char
+    })
+}
+
+fn digit_str<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, &'a str, T> {
+    take_while(ParseError::Kind(ErrorKinds::Digit), |byte| {
+        byte.is_ascii_digit()
+    })
+}
+
+fn alphanumeric_str<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, &'a str, T> {
+    take_while(ParseError::Kind(ErrorKinds::Alphanumeric), |byte| {
+        byte.is_ascii_alphanumeric()
+    })
 }
 
 fn alphanumeric<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
@@ -366,9 +411,30 @@ fn alphabetic<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
     })
 }
 
+fn int<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
+    digit_str().map_span(|span| {
+        Ast::Int(span.as_str().parse::<i64>().unwrap())
+    })
+}
+
+fn float<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
+    digit_str().then(ascii('.')).then(digit_str()).map_span(|span| {
+        Ast::Float(span.as_str().parse::<f64>().unwrap())
+    })
+}
+
+fn number<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
+    float().or(int())
+}
+
+fn id_str<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, &'a str, T> {
+    alphabetic().then(alphanumeric_str().opt()).map_span(|span| {
+        span.as_str()
+    })
+}
 fn id<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
-    alphabetic().then(count(alphanumeric())).map_span(|span| {
-        Ast::Identifier(span.as_str())
+    id_str().map(|output| {
+        Ast::Identifier(output)
     })
 }
 
@@ -381,24 +447,78 @@ fn call<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>,
         .then(whitespace().any())
         .then(
             any(
-                id().or(call).then(whitespace().any())
+                seq(expr, whitespace().any())
             )
         )
         .then(ascii(')'))
         .map(|output| {
-            let (((_, _), ids), _) = output;
-            match ids {
+            let (((_, _), exprs), _) = output;
+            match exprs {
                 None => Ast::Nil,
-                Some(ids) => Ast::Call(ids.into_iter().map(|(id, _)| {
-                    id
+                Some(exprs) => Ast::Call(exprs.into_iter().map(|(expr, _)| {
+                    expr
                 }).collect()),
             }
         }).parse(input)
 }
 
+fn dict<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
+    ascii('{')
+        .then(whitespace().any())
+        .then(pairs)
+        .then(whitespace().any())
+        .then(ascii('}'))
+        .map(|output| {
+            let ((((_, _), pairs), _), _) = output;
+            Ast::Dict(pairs)
+        }).parse(input)
+}
+
+
+fn pairs<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>, T> {
+    any(seq(pair, ascii(',')).then(count(whitespace())))
+        .then(pair)
+        .then(ascii(',').opt())
+        .map(|output| {
+            let ((initial, final_pair), _) = output;
+            let mut new_vec = vec![];
+            match initial {
+                None => {
+                    new_vec.push(final_pair);
+                    return new_vec;
+                }
+                Some(pairs) => {
+                    new_vec.extend(pairs.into_iter().map(|data| {
+                        let (((pair), _), _) = data;
+                        pair
+                    }).collect::<Vec<(&'a str, Ast<'a>)>>());
+                    new_vec.push(final_pair);
+                    return new_vec;
+                }
+            }
+        }).parse(input)
+}
+
+fn pair<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, (&'a str, Ast<'a>), T> {
+    id_str()
+        .then(count(whitespace()))
+        .then(ascii(':'))
+        .then(count(whitespace()))
+        .then(expr)
+        .map(|output| {
+            let ((((id, _), _), _), ast) = output;
+            (id, ast)
+        }).parse(input)
+}
+
+fn expr<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
+    number().or(id()).or(call).or(dict).parse(input)
+}
+
 #[derive(Debug)]
 pub enum Ast<'a> {
     Call(Vec<Ast<'a>>),
+    Dict(Vec<(&'a str, Ast<'a>)>),
     Identifier(&'a str),
     Int(i64),
     Float(f64),
@@ -410,7 +530,7 @@ pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, String> {
         return Ok(vec![]);
     }
 
-    let span = Span::new(input, ());
+    let span = Span::new(input, PrintlnTracer {});
     let parsed = many(
         whitespace().any()
         .then(call)
