@@ -474,16 +474,42 @@ fn call<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>,
         }).parse(input)
 }
 
+fn list<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
+    ascii('[')
+        .then(whitespace().any())
+        .then(
+            any(
+                seq(expr, whitespace().any())
+            )
+        )
+        .then(ascii(']'))
+        .map(|output| {
+            let (((_, _), exprs), _) = output;
+            match exprs {
+                None => Ast::Nil,
+                Some(exprs) => Ast::List(exprs.into_iter().map(|(expr, _)| {
+                    expr
+                }).collect()),
+            }
+        }).parse(input)
+}
+
 fn dict<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
     ascii('{')
         .then(whitespace().count())
-        .then(choose(pairs_oneline, pairs_multiline))
+        .then(choose(pairs_oneline, pairs_multiline).or(no_pairs))
         .then(whitespace().count())
         .then(ascii('}'))
         .map(|output| {
             let ((((_, _), pairs), _), _) = output;
             Ast::Dict(pairs)
         }).parse(input)
+}
+
+fn no_pairs<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>, T> {
+    whitespace().count().map_span(|_| {
+        vec![]
+    }).parse(input)
 }
 
 
@@ -545,13 +571,14 @@ fn pair<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, (&'a str
 }
 
 fn expr<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
-    number().or(id()).or(call).or(dict).parse(input)
+    number().or(id()).or(call).or(dict).or(list).parse(input)
 }
 
 #[derive(Debug)]
 pub enum Ast<'a> {
     Call(Vec<Ast<'a>>),
     Dict(Vec<(&'a str, Ast<'a>)>),
+    List(Vec<Ast<'a>>),
     Identifier(&'a str),
     Int(i64),
     Float(f64),
@@ -563,7 +590,7 @@ pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, String> {
         return Ok(vec![]);
     }
 
-    let span = Span::new(input, PrintlnTracer {});
+    let span = Span::new(input, ());
     let parsed = many(
         whitespace().any()
         .then(call)

@@ -1,3 +1,4 @@
-(def boot {
-  a: b
-} (println hello))
+(def boot [a]
+  (let {
+    b: 2
+  } (println (plus a b))))
