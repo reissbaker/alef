@@ -73,6 +73,15 @@ impl<'a, T: Tracer<'a>> Span<'a, T> {
         }
     }
 
+    pub fn err_consume(&self, count: usize) -> Span<'a, T> {
+        Span {
+            start: self.start + count,
+            end: self.end,
+            input: self.input,
+            tracer: self.tracer,
+        }
+    }
+
     pub fn get_consumed(&self, next_start: usize) -> Span<'a, T> {
         Span {
             start: self.start,

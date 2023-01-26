@@ -102,6 +102,29 @@ fn ascii<'a, T: Tracer<'a>>(c: char) -> impl FnMut(&Span<'a, T>) -> ParseResult<
     }
 }
 
+pub struct StrMatch<'a> {
+    target: &'a str
+}
+impl<'a, T: Tracer<'a>> Parser<'a, &'a str, T> for StrMatch<'a> {
+    fn do_parse(&mut self, span: &Span<'a, T>) -> ParseResult<'a, &'a str, T> {
+        let target_bytes = self.target.as_bytes();
+        let source_bytes = span.as_bytes();
+        for i in 0..self.target.len() {
+            if target_bytes[i] != source_bytes[i] {
+                return Err(ErrorCollector::new(
+                    span.err_consume(i),
+                    ParseError::Char(target_bytes[i] as char)
+                ));
+            }
+        }
+        let count = self.target.len();
+        Ok((span.consume(count), self.target, None))
+    }
+}
+fn ascii_str<'a>(target: &'a str) -> StrMatch<'a> {
+    StrMatch { target }
+}
+
 pub struct Seq<'a, T, OFirst, ONext, PFirst, PNext>
 where T: Tracer<'a>, PFirst: Parser<'a, OFirst, T>, PNext: Parser<'a, ONext, T> {
     first: PFirst,
@@ -454,6 +477,34 @@ fn whitespace<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, char, T> {
     choose(space(), newline())
 }
 
+fn surrounded<'a, O, FO, LO, T, F, L, P>(first: F, last: L, parser: P) -> impl Parser<'a, O, T>
+where O: 'a,
+FO: 'a,
+LO: 'a,
+T: 'a + Tracer<'a>,
+F: Parser<'a, FO, T>,
+L: Parser<'a, LO, T>,
+P: Parser<'a, O, T> {
+    first
+        .then(whitespace().count())
+        .then(parser)
+        .then(whitespace().count())
+        .then(last)
+        .map(|output| {
+            let ((((_, _), exprs), _), _) = output;
+            exprs
+        })
+}
+
+fn typelist<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
+    surrounded(ascii('<'), ascii('>'),
+        seq(expr, whitespace().count()).then(id_str())
+    ).map(|output| {
+        let ((ast, _), id_str) = output;
+        Ast::TypeAssert(Box::new(ast), id_str)
+    }).parse(input)
+}
+
 fn call<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
     ascii('(')
         .then(whitespace().any())
@@ -570,8 +621,36 @@ fn pair<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, (&'a str
         }).parse(input)
 }
 
+fn operator<'a, T: 'a + Tracer<'a>>() -> impl Parser<'a, Ast<'a>, T> {
+    ascii_str("&&")
+        .or(ascii_str("&"))
+        .or(ascii_str("||"))
+        .or(ascii_str("|"))
+        .or(ascii_str("++"))
+        .or(ascii_str("+="))
+        .or(ascii_str("+"))
+        .or(ascii_str("--"))
+        .or(ascii_str("-="))
+        .or(ascii_str("-"))
+        .or(ascii_str("**"))
+        .or(ascii_str("*"))
+        .or(ascii_str("/"))
+        .or(ascii_str("%"))
+        .or(ascii_str("=="))
+        .or(ascii_str("!="))
+        .or(ascii_str("!"))
+        .or(ascii_str(">="))
+        .or(ascii_str(">"))
+        .or(ascii_str("<="))
+        .or(ascii_str("<"))
+        .map(|string| {
+            Ast::Identifier(string)
+        })
+}
+
+
 fn expr<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
-    number().or(id()).or(call).or(dict).or(list).parse(input)
+    number().or(id()).or(call).or(dict).or(list).or(typelist).or(operator()).parse(input)
 }
 
 #[derive(Debug)]
@@ -579,6 +658,7 @@ pub enum Ast<'a> {
     Call(Vec<Ast<'a>>),
     Dict(Vec<(&'a str, Ast<'a>)>),
     List(Vec<Ast<'a>>),
+    TypeAssert(Box<Ast<'a>>, &'a str),
     Identifier(&'a str),
     Int(i64),
     Float(f64),

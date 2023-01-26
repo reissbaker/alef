@@ -1,4 +1,4 @@
-(def boot [a]
+(def boot [<int a>]
   (let {
     b: 2
-  } (println (plus a b))))
+  } (println (+ a b))))
