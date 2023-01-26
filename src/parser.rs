@@ -506,43 +506,31 @@ fn typelist<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<
 }
 
 fn call<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
-    ascii('(')
-        .then(whitespace().any())
-        .then(
-            any(
-                seq(expr, whitespace().any())
-            )
-        )
-        .then(ascii(')'))
-        .map(|output| {
-            let (((_, _), exprs), _) = output;
-            match exprs {
-                None => Ast::Nil,
-                Some(exprs) => Ast::Call(exprs.into_iter().map(|(expr, _)| {
-                    expr
-                }).collect()),
-            }
-        }).parse(input)
+    surrounded(ascii('('), ascii(')'),
+        any(seq(expr, whitespace().any()))
+    )
+    .map(|exprs| {
+        match exprs {
+            None => Ast::Call(vec![]),
+            Some(exprs) => Ast::Call(exprs.into_iter().map(|(expr, _)| {
+                expr
+            }).collect()),
+        }
+    }).parse(input)
 }
 
 fn list<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
-    ascii('[')
-        .then(whitespace().any())
-        .then(
-            any(
-                seq(expr, whitespace().any())
-            )
-        )
-        .then(ascii(']'))
-        .map(|output| {
-            let (((_, _), exprs), _) = output;
-            match exprs {
-                None => Ast::Nil,
-                Some(exprs) => Ast::List(exprs.into_iter().map(|(expr, _)| {
-                    expr
-                }).collect()),
-            }
-        }).parse(input)
+    surrounded(ascii('['), ascii(']'),
+        any(seq(expr, whitespace().any()))
+    )
+    .map(|exprs| {
+        match exprs {
+            None => Ast::List(vec![]),
+            Some(exprs) => Ast::List(exprs.into_iter().map(|(expr, _)| {
+                expr
+            }).collect()),
+        }
+    }).parse(input)
 }
 
 fn dict<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Ast<'a>, T> {
@@ -562,7 +550,6 @@ fn no_pairs<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<
         vec![]
     }).parse(input)
 }
-
 
 fn pairs_oneline<'a, T: 'a + Tracer<'a>>(input: &Span<'a, T>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>, T> {
     any(seq(pair, whitespace().count()).then(ascii(',')).then(whitespace().count()))
