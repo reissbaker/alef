@@ -3,6 +3,8 @@
   (println (+ a b))
 }
 
+(boot 3)
+
 {let dict {
   b: 2
   c: 3.1
