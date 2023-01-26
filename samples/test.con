@@ -1,4 +1,13 @@
-(def boot [<int a>]
-  (let {
-    b: 2
-  } (println (+ a b))))
+{def boot [<int a>]
+  {let b 2}
+  (println (+ a b))
+}
+
+{let dict {
+  b: 2
+  c: 3.1
+}}
+
+{def not_empty? [list]
+  (!= (len list) 0)
+}
