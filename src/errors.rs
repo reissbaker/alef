@@ -1,7 +1,7 @@
 use std::fmt::Debug;
-use crate::span::{Span, Tracer};
+use crate::span::{Span};
 
-pub fn format_error<'a, T: Tracer<'a>, E: Debug + Clone + Copy>(e: ErrorPicker<'a, T, E>) -> String {
+pub fn format_error<'a, E: Debug + Clone + Copy>(e: ErrorPicker<'a, E>) -> String {
     format!("Syntax error at index {}. Expected one of the following:\n{}", e.get_span().start, e.get_messages().into_iter().map(|e| {
         format!("{:?}", e)
     }).collect::<Vec<String>>().join("\n"))
@@ -15,20 +15,20 @@ pub enum ParseError<E: Debug + Clone + Copy> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ErrorPicker<'a, T: Tracer<'a>, E: Debug + Clone + Copy> {
-    longest_chain: Span<'a, T>,
+pub struct ErrorPicker<'a, E: Debug + Clone + Copy> {
+    longest_chain: Span<'a>,
     messages: Vec<ParseError<E>>,
 }
 
-impl<'a, T: Tracer<'a>, E: Debug + Clone + Copy> ErrorPicker<'a, T, E> {
-    pub fn new(span: Span<'a, T>, e: ParseError<E>) -> ErrorPicker<'a, T, E> {
+impl<'a, E: Debug + Clone + Copy> ErrorPicker<'a, E> {
+    pub fn new(span: Span<'a>, e: ParseError<E>) -> ErrorPicker<'a, E> {
         ErrorPicker {
             messages: vec![ e ],
             longest_chain: span,
         }
     }
 
-    pub fn get_span(&self) -> Span<'a, T> {
+    pub fn get_span(&self) -> Span<'a> {
         self.longest_chain
     }
 
@@ -36,7 +36,7 @@ impl<'a, T: Tracer<'a>, E: Debug + Clone + Copy> ErrorPicker<'a, T, E> {
         self.messages
     }
 
-    pub fn longest(mut self, initial: ErrorPicker<'a, T, E>) -> ErrorPicker<'a, T, E> {
+    pub fn longest(mut self, initial: ErrorPicker<'a, E>) -> ErrorPicker<'a, E> {
         if self.longest_chain.start > initial.longest_chain.start {
             return self;
         }
@@ -50,7 +50,7 @@ impl<'a, T: Tracer<'a>, E: Debug + Clone + Copy> ErrorPicker<'a, T, E> {
         initial
     }
 
-    pub fn maybe_longest(self, initial: Option<ErrorPicker<'a, T, E>>) -> ErrorPicker<'a, T, E> {
+    pub fn maybe_longest(self, initial: Option<ErrorPicker<'a, E>>) -> ErrorPicker<'a, E> {
         match initial {
             Some(e) => self.longest(e),
             None => self,

@@ -1,6 +1,8 @@
 mod span;
 mod errors;
+mod ast;
 mod parser;
+mod macros;
 
 use std::fs;
 use miette::{NamedSource, Diagnostic, SourceSpan, ErrReport};
@@ -31,9 +33,9 @@ fn main() -> miette::Result<()> {
         Ok(file) => {
             match parse(&file.clone()) {
                 Ok(parsed) => {
-                    println!("Parse success!\nExpressions parsed:\n");
-                    for expr in parsed.into_iter() {
-                        println!("{:?}\n", expr);
+                    println!("Parse success!\nExpressions parsed:");
+                    for (pos, expr) in parsed.iter().enumerate() {
+                        println!("\n{}: {:?}", pos + 1, expr);
                     }
                 }
                 Err(e) => {
