@@ -20,6 +20,7 @@ pub enum Tracers {
 }
 
 impl<'a> Tracer<'a> for Tracers {
+    #[cfg(debug_assertions)]
     fn trace(self, trace: Trace, span: &Span<'a>) {
         match self {
             Tracers::Println(tracer) => {
