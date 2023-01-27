@@ -64,7 +64,7 @@ pub trait Parser<'a, O> where Self: Sized {
         many(self)
     }
 
-    fn map<O2, F: Fn(O) -> O2>(self, cb: F) -> Map<'a, O, O2, Self, F> {
+    fn map<O2, F: Fn(O, &Span<'a>) -> O2>(self, cb: F) -> Map<'a, O, O2, Self, F> {
         map(self, cb)
     }
 
@@ -348,20 +348,21 @@ where L: Parser<'a, O>, R: Parser<'a, O> {
 }
 
 pub struct Map<'a, I, O, P, F>
-where P: Parser<'a, I>, F: Fn(I) -> O {
+where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
     target: P,
     cb: F,
     _phantom: PhantomData<&'a (I, O)>,
 }
 impl<'a, I, O, P, F> Parser<'a, O> for Map<'a, I, O, P, F>
-where P: Parser<'a, I>, F: Fn(I) -> O {
+where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
     fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
         let (remaining, output, e) = self.target.parse(span)?;
-        Ok((remaining, (self.cb)(output), e))
+        let consumed = span.get_consumed(remaining.start);
+        Ok((remaining, (self.cb)(output, &consumed), e))
     }
 }
 fn map<'a, I, O, P, F>(target: P, cb: F) -> Map<'a, I, O, P, F>
-where P: Parser<'a, I>, F: Fn(I) -> O {
+where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
     Map {
         target, cb,
         _phantom: PhantomData,
@@ -427,7 +428,7 @@ where F: Fn(u8) -> bool {
 fn digit<'a>() -> impl Parser<'a, char> {
     expect_byte(ParseError::Kind(ErrorKinds::Digit), |byte| {
         byte.is_ascii_digit()
-    }).map(|byte| {
+    }).map(|byte, _| {
         byte as char
     })
 }
@@ -447,7 +448,7 @@ fn alphanumeric_str<'a>() -> impl Parser<'a, &'a str> {
 fn alphanumeric<'a>() -> impl Parser<'a, char> {
     expect_byte(ParseError::Kind(ErrorKinds::Alphanumeric), |byte| {
         byte.is_ascii_alphanumeric()
-    }).map(|byte| {
+    }).map(|byte, _| {
         byte as char
     })
 }
@@ -461,20 +462,20 @@ fn alphanumeric_or_underscore_str<'a>() -> impl Parser<'a, &'a str> {
 fn alphabetic<'a>() -> impl Parser<'a, char> {
     expect_byte(ParseError::Kind(ErrorKinds::Alphabetic), |byte| {
         byte.is_ascii_alphabetic()
-    }).map(|byte| {
+    }).map(|byte, _| {
         byte as char
     })
 }
 
 fn int<'a>() -> impl Parser<'a, Ast<'a>> {
     digit_str().map_span(|span| {
-        Ast::Int(span.as_str().parse::<i64>().unwrap())
+        Ast::Int(*span, span.as_str().parse::<i64>().unwrap())
     })
 }
 
 fn float<'a>() -> impl Parser<'a, Ast<'a>> {
     digit_str().then(ascii('.')).then(digit_str()).map_span(|span| {
-        Ast::Float(span.as_str().parse::<f64>().unwrap())
+        Ast::Float(*span, span.as_str().parse::<f64>().unwrap())
     })
 }
 
@@ -491,8 +492,8 @@ fn id_str<'a>() -> impl Parser<'a, &'a str> {
         })
 }
 fn id<'a>() -> impl Parser<'a, Ast<'a>> {
-    id_str().map(|output| {
-        Ast::Identifier(output)
+    id_str().map(|output, span| {
+        Ast::Identifier(*span, output)
     })
 }
 
@@ -520,7 +521,7 @@ P: Parser<'a, O> {
         .then(parser)
         .then(whitespace().count())
         .then(last)
-        .map(|output| {
+        .map(|output, _| {
             let ((((_, _), exprs), _), _) = output;
             exprs
         })
@@ -529,9 +530,9 @@ P: Parser<'a, O> {
 fn typelist<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('<'), ascii('>'),
         seq(expr, whitespace().count()).then(id_str())
-    ).map(|output| {
+    ).map(|output, span| {
         let ((ast, _), id_str) = output;
-        Ast::TypeAssert(Box::new(ast), id_str)
+        Ast::TypeAssert(*span, Box::new(ast), id_str)
     }).parse(input)
 }
 
@@ -539,8 +540,8 @@ fn macro_call<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('{'), ascii('}'),
         many(seq(expr, whitespace().any()))
     )
-    .map(|exprs| {
-        Ast::Macro(exprs.into_iter().map(|(expr, _)| {
+    .map(|exprs, span| {
+        Ast::Macro(*span, exprs.into_iter().map(|(expr, _)| {
             expr
         }).collect())
     }).parse(input)
@@ -550,10 +551,10 @@ fn call<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('('), ascii(')'),
         any(seq(expr, whitespace().any()))
     )
-    .map(|exprs| {
+    .map(|exprs, span| {
         match exprs {
-            None => Ast::Call(vec![]),
-            Some(exprs) => Ast::Call(exprs.into_iter().map(|(expr, _)| {
+            None => Ast::Call(*span, vec![]),
+            Some(exprs) => Ast::Call(*span, exprs.into_iter().map(|(expr, _)| {
                 expr
             }).collect()),
         }
@@ -564,10 +565,10 @@ fn list<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('['), ascii(']'),
         any(seq(expr, whitespace().any()))
     )
-    .map(|exprs| {
+    .map(|exprs, span| {
         match exprs {
-            None => Ast::List(vec![]),
-            Some(exprs) => Ast::List(exprs.into_iter().map(|(expr, _)| {
+            None => Ast::List(*span, vec![]),
+            Some(exprs) => Ast::List(*span, exprs.into_iter().map(|(expr, _)| {
                 expr
             }).collect()),
         }
@@ -580,9 +581,9 @@ fn dict<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         .then(choose(pairs_multiline, pairs_oneline).or(no_pairs))
         .then(whitespace().count())
         .then(ascii('}'))
-        .map(|output| {
+        .map(|output, span| {
             let ((((_, _), pairs), _), _) = output;
-            Ast::Dict(pairs)
+            Ast::Dict(*span, pairs)
         }).parse(input)
 }
 
@@ -595,7 +596,7 @@ fn no_pairs<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>> {
 fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>> {
     any(seq(pair, whitespace().count()).then(ascii(',')).then(whitespace().count()))
         .then(pair)
-        .map(|output| {
+        .map(|output, _| {
             let (initial, final_pair) = output;
             let mut new_vec = vec![];
             match initial {
@@ -623,7 +624,7 @@ fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a
             .then(newline())
             .then(whitespace().count())
     )
-        .map(|output| {
+        .map(|output, _| {
             match output {
                 None => vec![],
                 Some(output) => {
@@ -642,7 +643,7 @@ fn pair<'a>(input: &Span<'a>) -> ParseResult<'a, (&'a str, Ast<'a>)> {
         .then(ascii(':'))
         .then(whitespace().count())
         .then(expr)
-        .map(|output| {
+        .map(|output, _| {
             let ((((id, _), _), _), ast) = output;
             (id, ast)
         }).parse(input)
@@ -670,8 +671,8 @@ fn operator<'a>() -> impl Parser<'a, Ast<'a>> {
         .or(ascii_str(">"))
         .or(ascii_str("<="))
         .or(ascii_str("<"))
-        .map(|string| {
-            Ast::Identifier(string)
+        .map(|string, span| {
+            Ast::Identifier(*span, string)
         })
 }
 
@@ -698,7 +699,7 @@ pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector<'a>> {
         whitespace().any()
         .then(expr)
         .then(whitespace().any())
-        .map(|output| {
+        .map(|output, _| {
             let ((_, exprs), _) = output;
             exprs
         })
