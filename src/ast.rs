@@ -1,6 +1,6 @@
 use crate::span::Span;
 
-pub type DictPairs<'a> = Vec<(&'a str, Ast<'a>)>;
+pub type DictPairs<'a> = Vec<((Span<'a>, &'a str), Ast<'a>)>;
 
 pub enum Ast<'a> {
     Macro(Span<'a>, Vec<Ast<'a>>),
@@ -24,7 +24,8 @@ impl<'a> std::fmt::Debug for Ast<'a> {
             }
             Ast::Dict(span, pairs) => {
                 let pair_str = pairs.into_iter().map(|pair| {
-                    format!("({:?}, {:?})", pair.0, pair.1)
+                    let (key_span, key) = pair.0;
+                    format!("(Key({}-{}, {:?}), {:?})", key_span.start, key_span.end, key, pair.1)
                 }).collect::<Vec<String>>().join(",");
 
                 write!(f, "Dict({}-{}, [{:?}])", span.start, span.end, pair_str)?;

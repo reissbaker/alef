@@ -587,13 +587,13 @@ fn dict<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         }).parse(input)
 }
 
-fn no_pairs<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>> {
+fn no_pairs<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a str), Ast<'a>)>> {
     whitespace().count().map_span(|_| {
         vec![]
     }).parse(input)
 }
 
-fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>> {
+fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a str), Ast<'a>)>> {
     any(seq(pair, whitespace().count()).then(ascii(',')).then(whitespace().count()))
         .then(pair)
         .map(|output, _| {
@@ -608,7 +608,7 @@ fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)
                     new_vec.extend(pairs.into_iter().map(|data| {
                         let (((pair, _), _), _) = data;
                         pair
-                    }).collect::<Vec<(&'a str, Ast<'a>)>>());
+                    }).collect::<Vec<((Span<'a>, &'a str), Ast<'a>)>>());
                     new_vec.push(final_pair);
                     return new_vec;
                 }
@@ -616,7 +616,7 @@ fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)
         }).parse(input)
 }
 
-fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a>)>> {
+fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a str), Ast<'a>)>> {
     any(
         seq(pair, space().count())
             .then(ascii(',').opt())
@@ -637,8 +637,11 @@ fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<(&'a str, Ast<'a
         }).parse(input)
 }
 
-fn pair<'a>(input: &Span<'a>) -> ParseResult<'a, (&'a str, Ast<'a>)> {
+fn pair<'a>(input: &Span<'a>) -> ParseResult<'a, ((Span<'a>, &'a str), Ast<'a>)> {
     id_str()
+        .map(|output, span| {
+            (*span, output)
+        })
         .then(whitespace().count())
         .then(ascii(':'))
         .then(whitespace().count())
