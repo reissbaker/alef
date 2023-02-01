@@ -19,3 +19,5 @@
 {def not_empty? [list]
   (!= (len list) 0)
 }
+
+(1.+ 2)

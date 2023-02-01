@@ -531,6 +531,13 @@ fn id<'a>() -> impl Parser<'a, Ast<'a>> {
     })
 }
 
+fn field<'a>() -> impl Parser<'a, Ast<'a>> {
+    ascii('.').then(id_str().or(operator_str())).map_span(|span| {
+        let dotless = span.slice(1, span.len());
+        Ast::Field(span.into(), dotless.as_str())
+    })
+}
+
 fn space<'a>() -> impl Parser<'a, char> {
     ascii(' ')
 }
@@ -703,7 +710,7 @@ fn pair<'a>(input: &Span<'a>) -> ParseResult<'a, ((AstSpan, &'a str), Ast<'a>)> 
         }).parse(input)
 }
 
-fn operator<'a>() -> impl Parser<'a, Ast<'a>> {
+fn operator_str<'a>() -> impl Parser<'a, &'a str> {
     ascii_str("&&")
         .or(ascii_str("&"))
         .or(ascii_str("||"))
@@ -726,6 +733,10 @@ fn operator<'a>() -> impl Parser<'a, Ast<'a>> {
         .or(ascii_str("<="))
         .or(ascii_str("<"))
         .peek(trailing_values())
+}
+
+fn operator<'a>() -> impl Parser<'a, Ast<'a>> {
+    operator_str()
         .map(|string, span| {
             Ast::Identifier(span.into(), string)
         })
@@ -741,6 +752,7 @@ fn expr<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         .or(list)
         .or(typelist)
         .or(operator())
+        .or(field())
         .parse(input)
 }
 

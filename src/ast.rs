@@ -32,6 +32,7 @@ pub enum Ast<'a> {
     List(AstSpan, Vec<Ast<'a>>),
     TypeAssert(AstSpan, Box<Ast<'a>>, &'a str),
     Identifier(AstSpan, &'a str),
+    Field(AstSpan, &'a str),
     Int(AstSpan, i64),
     Float(AstSpan, f64),
 }
@@ -67,6 +68,9 @@ impl<'a> std::fmt::Debug for Ast<'a> {
             }
             Ast::Float(span, val) => {
                 write!(f, "Float({}-{}, {:?})", span.start, span.end, val)?;
+            }
+            Ast::Field(span, name) => {
+                write!(f, "Field({}-{}, {:?})", span.start, span.end, name)?;
             }
         }
         Ok(())

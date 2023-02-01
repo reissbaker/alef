@@ -107,12 +107,22 @@ impl<'a> Span<'a> {
     pub fn as_bytes(&self) -> &[u8] {
         &self.input.as_bytes()[self.start..self.end]
     }
+
     pub fn as_str(&self) -> &'a str {
         &self.input[self.start..self.end]
     }
 
     pub fn len(&self) -> usize {
         self.end - self.start
+    }
+
+    pub fn slice(&self, start: usize, len: usize) -> Span<'a> {
+        Span {
+            start: self.start + start,
+            end: self.start + len,
+            input: self.input,
+            tracer: self.tracer,
+        }
     }
 
     #[cfg(debug_assertions)]
