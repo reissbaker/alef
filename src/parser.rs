@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::fmt::Debug;
 use crate::span::{Span, Trace, Tracers};
 use crate::errors::{ErrorPicker, ParseError};
-use crate::ast::Ast;
+use crate::ast::{Ast, AstSpan};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ErrorKinds {
@@ -502,13 +502,13 @@ fn alphabetic<'a>() -> impl Parser<'a, char> {
 
 fn int<'a>() -> impl Parser<'a, Ast<'a>> {
     digit_str().map_span(|span| {
-        Ast::Int(*span, span.as_str().parse::<i64>().unwrap())
+        Ast::Int(span.into(), span.as_str().parse::<i64>().unwrap())
     })
 }
 
 fn float<'a>() -> impl Parser<'a, Ast<'a>> {
     digit_str().then(ascii('.')).then(digit_str()).map_span(|span| {
-        Ast::Float(*span, span.as_str().parse::<f64>().unwrap())
+        Ast::Float(span.into(), span.as_str().parse::<f64>().unwrap())
     })
 }
 
@@ -527,7 +527,7 @@ fn id_str<'a>() -> impl Parser<'a, &'a str> {
 }
 fn id<'a>() -> impl Parser<'a, Ast<'a>> {
     id_str().map(|output, span| {
-        Ast::Identifier(*span, output)
+        Ast::Identifier(span.into(), output)
     })
 }
 
@@ -583,7 +583,7 @@ fn typelist<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         seq(expr, whitespace().count()).then(id_str())
     ).map(|output, span| {
         let ((ast, _), id_str) = output;
-        Ast::TypeAssert(*span, Box::new(ast), id_str)
+        Ast::TypeAssert(span.into(), Box::new(ast), id_str)
     }).parse(input)
 }
 
@@ -592,7 +592,7 @@ fn macro_call<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         many(seq(expr, whitespace().any()))
     )
     .map(|exprs, span| {
-        Ast::Macro(*span, exprs.into_iter().map(|(expr, _)| {
+        Ast::Macro(span.into(), exprs.into_iter().map(|(expr, _)| {
             expr
         }).collect())
     }).parse(input)
@@ -604,8 +604,8 @@ fn call<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
     )
     .map(|exprs, span| {
         match exprs {
-            None => Ast::Call(*span, vec![]),
-            Some(exprs) => Ast::Call(*span, exprs.into_iter().map(|(expr, _)| {
+            None => Ast::Call(span.into(), vec![]),
+            Some(exprs) => Ast::Call(span.into(), exprs.into_iter().map(|(expr, _)| {
                 expr
             }).collect()),
         }
@@ -618,8 +618,8 @@ fn list<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
     )
     .map(|exprs, span| {
         match exprs {
-            None => Ast::List(*span, vec![]),
-            Some(exprs) => Ast::List(*span, exprs.into_iter().map(|(expr, _)| {
+            None => Ast::List(span.into(), vec![]),
+            Some(exprs) => Ast::List(span.into(), exprs.into_iter().map(|(expr, _)| {
                 expr
             }).collect()),
         }
@@ -634,17 +634,17 @@ fn dict<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         .then(ascii('}'))
         .map(|output, span| {
             let ((((_, _), pairs), _), _) = output;
-            Ast::Dict(*span, pairs)
+            Ast::Dict(span.into(), pairs)
         }).parse(input)
 }
 
-fn no_pairs<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a str), Ast<'a>)>> {
+fn no_pairs<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
     whitespace().count().map_span(|_| {
         vec![]
     }).parse(input)
 }
 
-fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a str), Ast<'a>)>> {
+fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
     any(seq(pair, whitespace().count()).then(ascii(',')).then(whitespace().count()))
         .then(pair)
         .map(|output, _| {
@@ -659,7 +659,7 @@ fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a st
                     new_vec.extend(pairs.into_iter().map(|data| {
                         let (((pair, _), _), _) = data;
                         pair
-                    }).collect::<Vec<((Span<'a>, &'a str), Ast<'a>)>>());
+                    }).collect::<Vec<((AstSpan, &'a str), Ast<'a>)>>());
                     new_vec.push(final_pair);
                     return new_vec;
                 }
@@ -667,7 +667,7 @@ fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a st
         }).parse(input)
 }
 
-fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a str), Ast<'a>)>> {
+fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
     any(
         seq(pair, space().count())
             .then(ascii(',').opt())
@@ -688,10 +688,10 @@ fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((Span<'a>, &'a 
         }).parse(input)
 }
 
-fn pair<'a>(input: &Span<'a>) -> ParseResult<'a, ((Span<'a>, &'a str), Ast<'a>)> {
+fn pair<'a>(input: &Span<'a>) -> ParseResult<'a, ((AstSpan, &'a str), Ast<'a>)> {
     id_str()
         .map(|output, span| {
-            (*span, output)
+            (span.into(), output)
         })
         .then(whitespace().count())
         .then(ascii(':'))
@@ -727,7 +727,7 @@ fn operator<'a>() -> impl Parser<'a, Ast<'a>> {
         .or(ascii_str("<"))
         .peek(trailing_values())
         .map(|string, span| {
-            Ast::Identifier(*span, string)
+            Ast::Identifier(span.into(), string)
         })
 }
 

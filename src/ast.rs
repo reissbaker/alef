@@ -1,16 +1,39 @@
 use crate::span::Span;
 
-pub type DictPairs<'a> = Vec<((Span<'a>, &'a str), Ast<'a>)>;
+#[derive(Debug, Copy, Clone)]
+pub struct AstSpan {
+    start: usize,
+    end: usize,
+}
+
+impl<'a> From<&Span<'a>> for AstSpan {
+    fn from(value: &Span<'a>) -> Self {
+        AstSpan {
+            start: value.start,
+            end: value.end,
+        }
+    }
+}
+impl<'a> From<Span<'a>> for AstSpan {
+    fn from(value: Span<'a>) -> Self {
+        AstSpan {
+            start: value.start,
+            end: value.end,
+        }
+    }
+}
+
+pub type DictPairs<'a> = Vec<((AstSpan, &'a str), Ast<'a>)>;
 
 pub enum Ast<'a> {
-    Macro(Span<'a>, Vec<Ast<'a>>),
-    Call(Span<'a>, Vec<Ast<'a>>),
-    Dict(Span<'a>, DictPairs<'a>),
-    List(Span<'a>, Vec<Ast<'a>>),
-    TypeAssert(Span<'a>, Box<Ast<'a>>, &'a str),
-    Identifier(Span<'a>, &'a str),
-    Int(Span<'a>, i64),
-    Float(Span<'a>, f64),
+    Macro(AstSpan, Vec<Ast<'a>>),
+    Call(AstSpan, Vec<Ast<'a>>),
+    Dict(AstSpan, DictPairs<'a>),
+    List(AstSpan, Vec<Ast<'a>>),
+    TypeAssert(AstSpan, Box<Ast<'a>>, &'a str),
+    Identifier(AstSpan, &'a str),
+    Int(AstSpan, i64),
+    Float(AstSpan, f64),
 }
 
 impl<'a> std::fmt::Debug for Ast<'a> {
