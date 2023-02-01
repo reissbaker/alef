@@ -147,7 +147,12 @@ pub struct DebugParser<'a, O, P: Parser<'a, O>> {
 }
 impl<'a, O, P: Parser<'a, O>> Parser<'a, O> for DebugParser<'a, O, P> {
     fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
-        println!("{}", self.msg);
+        println!(
+            "{}\n{}\n{}",
+            "=====================================================================================",
+            self.msg,
+            "=====================================================================================",
+        );
         self.target.parse(span)
     }
 }
