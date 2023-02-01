@@ -25,8 +25,8 @@ pub struct PrettyParseError {
 }
 
 fn main() -> miette::Result<()> {
-    let path = "./samples/test.con";
-    match fs::read_to_string(path) {
+    let path = std::env::args().last().unwrap();
+    match fs::read_to_string(path.clone()) {
         Err(e) => {
             panic!("{:?}", e);
         }
