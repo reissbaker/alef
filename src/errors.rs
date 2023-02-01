@@ -11,6 +11,7 @@ pub fn format_error<'a, E: Debug + Clone + Copy>(e: ErrorPicker<'a, E>) -> Strin
 pub enum ParseError<E: Debug + Clone + Copy> {
     Char(char),
     Byte(u8),
+    EOI,
     Kind(E),
 }
 

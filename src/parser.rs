@@ -76,6 +76,10 @@ pub trait Parser<'a, O> where Self: Sized {
         count(self)
     }
 
+    fn peek<O2, P2: Parser<'a, O2>>(self, target: P2) -> Peek<'a, O, O2, Self, P2> {
+        peek(self, target)
+    }
+
     fn debug(self, msg: &'a str) -> DebugParser<'a, O, Self> {
         debug(msg, self)
     }
@@ -84,6 +88,15 @@ pub trait Parser<'a, O> where Self: Sized {
 impl<'a, O, F: FnMut(&Span<'a>) -> ParseResult<'a, O>> Parser<'a, O> for F {
     fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
         self(span)
+    }
+}
+
+fn eoi<'a>() -> impl FnMut(&Span<'a>) -> ParseResult<'a, ()> {
+    move |span: &Span<'a>| {
+        if span.len() == 0 {
+            return Ok((*span, (), None));
+        }
+        Err(ErrorCollector::new(*span, ParseError::EOI))
     }
 }
 
@@ -104,6 +117,26 @@ fn ascii<'a>(c: char) -> impl FnMut(&Span<'a>) -> ParseResult<'a, char> {
             return Ok((span.consume(1), next_byte as char, None));
         }
         Err(ErrorCollector::new(*span, ParseError::Char(c)))
+    }
+}
+
+pub struct Peek<'a, O, O2, P: Parser<'a, O>, P2: Parser<'a, O2>> {
+    target: P,
+    peek_target: P2,
+    _phantom: PhantomData<&'a (O, O2)>,
+}
+impl<'a, O, O2, P: Parser<'a, O>, P2: Parser<'a, O2>> Parser<'a, O> for Peek<'a, O, O2, P, P2> {
+    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
+        let (remaining, data, trailing_e) = self.target.parse(span)?;
+        self.peek_target.parse(&remaining)?;
+        Ok((remaining, data, trailing_e))
+    }
+}
+
+fn peek<'a, O, O2, P: Parser<'a, O>, P2: Parser<'a, O2>>(target: P, peek_target: P2) -> Peek<'a, O, O2, P, P2> {
+    Peek {
+        target, peek_target,
+        _phantom: PhantomData,
     }
 }
 
@@ -480,13 +513,14 @@ fn float<'a>() -> impl Parser<'a, Ast<'a>> {
 }
 
 fn number<'a>() -> impl Parser<'a, Ast<'a>> {
-    float().or(int())
+    float().or(int()).peek(trailing_values())
 }
 
 fn id_str<'a>() -> impl Parser<'a, &'a str> {
     alphabetic()
         .then(alphanumeric_or_underscore_str().opt())
         .then(ascii('?').opt())
+        .peek(trailing_values())
         .map_span(|span| {
             span.as_str()
         })
@@ -507,6 +541,23 @@ fn newline<'a>() -> impl Parser<'a, char> {
 
 fn whitespace<'a>() -> impl Parser<'a, char> {
     choose(space(), newline())
+}
+
+fn trailing_values<'a>() -> impl Parser<'a, char> {
+    whitespace()
+        .or(ascii(')'))
+        .or(ascii('}'))
+        .or(ascii(']'))
+        .or(ascii('>'))
+        .or(ascii(':'))
+        .or(ascii('.'))
+        .or(eoi().map(|_, _| {
+            // TODO: Make an either() that returns a left vs right value, so you can appropriately
+            // model nulls and varying return types, while keeping the default of coalescing values
+            // of the same type for or() since that's usually more convenient
+            // But whatever null byte here is fine I guess
+            0 as char
+        }))
 }
 
 fn surrounded<'a, O, FO, LO, F, L, P>(first: F, last: L, parser: P) -> impl Parser<'a, O>
@@ -674,6 +725,7 @@ fn operator<'a>() -> impl Parser<'a, Ast<'a>> {
         .or(ascii_str(">"))
         .or(ascii_str("<="))
         .or(ascii_str("<"))
+        .peek(trailing_values())
         .map(|string, span| {
             Ast::Identifier(*span, string)
         })
