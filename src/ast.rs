@@ -2,8 +2,8 @@ use crate::span::Span;
 
 #[derive(Debug, Copy, Clone)]
 pub struct AstSpan {
-    start: usize,
-    end: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 impl<'a> From<&Span<'a>> for AstSpan {

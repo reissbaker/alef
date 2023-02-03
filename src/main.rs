@@ -3,11 +3,13 @@ mod errors;
 mod ast;
 mod parser;
 mod macros;
+mod ir;
 
 use std::fs;
 use miette::{NamedSource, Diagnostic, SourceSpan, ErrReport};
 use parser::parse;
 use errors::format_error;
+use ir::to_ir_vec;
 use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
@@ -26,26 +28,32 @@ pub struct PrettyParseError {
 
 fn main() -> miette::Result<()> {
     let path = std::env::args().last().unwrap();
+
     match fs::read_to_string(path.clone()) {
         Err(e) => {
             panic!("{:?}", e);
         }
         Ok(file) => {
-            match parse(&file.clone()) {
-                Ok(parsed) => {
-                    println!("Parse success!\nExpressions parsed:");
-                    for (pos, expr) in parsed.iter().enumerate() {
-                        println!("\n{}: {:?}", pos + 1, expr);
-                    }
-                }
-                Err(e) => {
-                    return Err(ErrReport::from(PrettyParseError {
-                        src: NamedSource::new(path, file),
-                        error_loc: (e.get_span().start..e.get_span().start + 1).into(),
-                        expected: format_error(e),
-                    }));
-                }
+            let parse_file = file.clone();
+            let parsed = parse(&parse_file).map_err(|e| {
+                ErrReport::from(PrettyParseError {
+                    src: NamedSource::new(path.clone(), file),
+                    error_loc: (e.get_span().start..e.get_span().start + 1).into(),
+                    expected: format_error(e),
+                })
+            })?;
+
+            println!("Parse success!\nExpressions parsed:");
+            for (pos, expr) in parsed.iter().enumerate() {
+                println!("\n{}: {:?}", pos + 1, expr);
             }
+
+            let ir = to_ir_vec(&path, &parsed);
+            println!("IR convert success!\nIR:");
+            for (pos, expr) in ir.iter().enumerate() {
+                println!("\n{}: {:?}", pos + 1, expr);
+            }
+
             Ok(())
         }
     }
