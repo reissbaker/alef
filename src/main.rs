@@ -34,10 +34,10 @@ fn main() -> miette::Result<()> {
             panic!("{:?}", e);
         }
         Ok(file) => {
-            let parse_file = file.clone();
-            let parsed = parse(&parse_file).map_err(|e| {
+            let parsed = parse(&file).map_err(|e| {
+                let parse_file = file.clone();
                 ErrReport::from(PrettyParseError {
-                    src: NamedSource::new(path.clone(), file),
+                    src: NamedSource::new(path.clone(), parse_file),
                     error_loc: (e.get_span().start..e.get_span().start + 1).into(),
                     expected: format_error(e),
                 })

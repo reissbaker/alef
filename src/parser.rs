@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::fmt::Debug;
 use crate::span::{Span, Trace, Tracers};
-use crate::errors::{ErrorPicker, ParseError};
+use crate::errors::{FastError, ParseError};
 use crate::ast::{Ast, AstSpan};
 
 #[derive(Debug, Clone, Copy)]
@@ -11,7 +11,7 @@ pub enum ErrorKinds {
     Digit,
 }
 
-type ErrorCollector<'a> = ErrorPicker<'a, ErrorKinds>;
+type ErrorCollector<'a> = FastError<'a, ErrorKinds>;
 type OkReturn<'a, O> = (Span<'a>, O, Option<ErrorCollector<'a>>);
 type ParseResult<'a, O> = Result<OkReturn<'a, O>, ErrorCollector<'a>>;
 

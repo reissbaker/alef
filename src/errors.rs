@@ -1,8 +1,10 @@
 use std::fmt::Debug;
 use crate::span::{Span};
 
-pub fn format_error<'a, E: Debug + Clone + Copy>(e: ErrorPicker<'a, E>) -> String {
-    format!("Syntax error at index {}. Expected one of the following:\n{}", e.get_span().start, e.get_messages().into_iter().map(|e| {
+pub fn format_error<'a, E: Debug + Clone + Copy>(e: FastError<'a, E>) -> String {
+    let clone = e.clone();
+    let span = clone.get_span();
+    format!("Syntax error at index {}. Expected one of the following:\n{}", span.start, e.get_messages().into_iter().map(|e| {
         format!("{:?}", e)
     }).collect::<Vec<String>>().join("\n"))
 }
@@ -16,42 +18,59 @@ pub enum ParseError<E: Debug + Clone + Copy> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ErrorPicker<'a, E: Debug + Clone + Copy> {
-    longest_chain: Span<'a>,
-    messages: Vec<ParseError<E>>,
+pub enum FastErrorList<'a, E: Debug + Clone + Copy> {
+    Tail,
+    Node(Box<FastError<'a, E>>),
+}
+#[derive(Debug, Clone)]
+pub struct FastError<'a, E: Debug + Clone + Copy> {
+    span: Span<'a>,
+    error: ParseError<E>,
+    list: FastErrorList<'a, E>,
 }
 
-impl<'a, E: Debug + Clone + Copy> ErrorPicker<'a, E> {
-    pub fn new(span: Span<'a>, e: ParseError<E>) -> ErrorPicker<'a, E> {
-        ErrorPicker {
-            messages: vec![ e ],
-            longest_chain: span,
+impl<'a, E: Debug + Clone + Copy> FastError<'a, E> {
+    pub fn new(span: Span<'a>, e: ParseError<E>) -> FastError<'a, E> {
+        FastError {
+            span,
+            error: e,
+            list: FastErrorList::Tail,
         }
     }
 
     pub fn get_span(&self) -> Span<'a> {
-        self.longest_chain
+        self.span
     }
 
     pub fn get_messages(self) -> Vec<ParseError<E>> {
-        self.messages
+        let mut vec = vec![self.error];
+        match self.list {
+            FastErrorList::Tail => {
+            }
+            FastErrorList::Node(next) => {
+                vec.extend(next.get_messages());
+            }
+        }
+        vec
     }
 
-    pub fn longest(mut self, initial: ErrorPicker<'a, E>) -> ErrorPicker<'a, E> {
-        if self.longest_chain.start > initial.longest_chain.start {
+    pub fn longest(self, other: FastError<'a, E>) -> FastError<'a, E> {
+        let my_start = self.span.start;
+        let other_start = other.span.start;
+        if my_start > other_start {
             return self;
         }
-        if self.longest_chain.start == initial.longest_chain.start {
-            self.messages.extend(initial.messages);
-            return ErrorPicker {
-                longest_chain: self.longest_chain,
-                messages: self.messages,
-            };
+        if my_start == other_start {
+            return FastError {
+                span: self.span,
+                error: self.error,
+                list: FastErrorList::Node(Box::new(other)),
+            }
         }
-        initial
+        other
     }
 
-    pub fn maybe_longest(self, initial: Option<ErrorPicker<'a, E>>) -> ErrorPicker<'a, E> {
+    pub fn maybe_longest(self, initial: Option<FastError<'a, E>>) -> FastError<'a, E> {
         match initial {
             Some(e) => self.longest(e),
             None => self,
