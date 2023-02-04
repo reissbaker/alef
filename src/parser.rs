@@ -11,9 +11,9 @@ pub enum ErrorKinds {
     Digit,
 }
 
-type ErrorCollector<'a> = ErrorPicker<'a, ErrorKinds>;
-type OkReturn<'a, O> = (Span<'a>, O, Option<ErrorCollector<'a>>);
-type ParseResult<'a, O> = Result<OkReturn<'a, O>, ErrorCollector<'a>>;
+type ErrorCollector = ErrorPicker<ErrorKinds>;
+type OkReturn<'a, O> = (Span<'a>, O, Option<ErrorCollector>);
+type ParseResult<'a, O> = Result<OkReturn<'a, O>, ErrorCollector>;
 
 pub trait Parser<'a, O> where Self: Sized {
     fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O>;
@@ -96,7 +96,7 @@ fn eoi<'a>() -> impl FnMut(&Span<'a>) -> ParseResult<'a, ()> {
         if span.len() == 0 {
             return Ok((*span, (), None));
         }
-        Err(ErrorCollector::new(*span, ParseError::EOI))
+        Err(ErrorCollector::new(span, ParseError::EOI))
     }
 }
 
@@ -106,7 +106,7 @@ fn byte<'a>(b: u8) -> impl FnMut(&Span<'a>) -> ParseResult<'a, u8> {
         if next_byte == b {
             return Ok((span.consume(1), next_byte, None));
         }
-        Err(ErrorCollector::new(*span, ParseError::Byte(b)))
+        Err(ErrorCollector::new(span, ParseError::Byte(b)))
     }
 }
 
@@ -116,7 +116,7 @@ fn ascii<'a>(c: char) -> impl FnMut(&Span<'a>) -> ParseResult<'a, char> {
         if next_byte == (c as u8) {
             return Ok((span.consume(1), next_byte as char, None));
         }
-        Err(ErrorCollector::new(*span, ParseError::Char(c)))
+        Err(ErrorCollector::new(span, ParseError::Char(c)))
     }
 }
 
@@ -173,7 +173,7 @@ impl<'a> Parser<'a, &'a str> for StrMatch<'a> {
         for i in 0..self.target.len() {
             if target_bytes[i] != source_bytes[i] {
                 return Err(ErrorCollector::new(
-                    span.err_consume(i),
+                    &span.err_consume(i),
                     ParseError::Char(target_bytes[i] as char)
                 ));
             }
@@ -442,11 +442,11 @@ fn take_while<'a, F: Fn(u8) -> bool>(e: ParseError<ErrorKinds>, f: F) -> impl Fn
             count += 1;
         }
         if count == 0 {
-            return Err(ErrorCollector::new(*span, e));
+            return Err(ErrorCollector::new(span, e));
         }
         let new_span = span.consume(count);
         if did_err {
-            return Ok((new_span, span.as_str(), Some(ErrorCollector::new(*span, e))));
+            return Ok((new_span, span.as_str(), Some(ErrorCollector::new(span, e))));
         }
         Ok((new_span, span.as_str(), None))
     }
@@ -459,7 +459,7 @@ where F: Fn(u8) -> bool {
         if f(current_byte) {
             return Ok((span.consume(1), current_byte, None));
         }
-        Err(ErrorCollector::new(*span, e))
+        Err(ErrorCollector::new(span, e))
     }
 }
 
@@ -761,7 +761,7 @@ fn expr<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         .parse(input)
 }
 
-pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector<'a>> {
+pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector> {
     if input.len() == 0 {
         return Ok(vec![]);
     }
