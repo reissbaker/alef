@@ -60,6 +60,7 @@ impl<E: Debug + Clone + Copy> ErrorPicker<E> {
             return self;
         }
         if self.longest_chain.start == initial.longest_chain.start {
+            self.other_messages.push(initial.my_message);
             self.other_messages.extend(initial.other_messages);
             return ErrorPicker {
                 my_message: self.my_message,
