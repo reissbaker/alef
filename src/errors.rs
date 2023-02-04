@@ -24,15 +24,20 @@ pub struct ParseErrorSpan {
 #[derive(Debug, Clone)]
 pub struct ErrorPicker<E: Debug + Clone + Copy> {
     longest_chain: ParseErrorSpan,
-    message: ParseError<E>,
-    messages: Vec<ParseError<E>>,
+    // We separate my_message from other_messages as a perf optimization; this allows us to
+    // allocate an empty vec for new errors. Allocating an empty vec is much faster than allocating
+    // a vec with a single element (benchmarking shows nearly doubled perf on large files), and
+    // since all errors start off with an empty list, and most stay empty, this is worth a bit of
+    // extra work on the error formatting side which should be relatively rare.
+    my_message: ParseError<E>,
+    other_messages: Vec<ParseError<E>>,
 }
 
 impl<E: Debug + Clone + Copy> ErrorPicker<E> {
     pub fn new<'a>(span: &Span<'a>, e: ParseError<E>) -> ErrorPicker<E> {
         ErrorPicker {
-            message: e,
-            messages: vec![],
+            my_message: e,
+            other_messages: vec![],
             longest_chain: ParseErrorSpan {
                 start: span.start,
                 end: span.end,
@@ -45,8 +50,8 @@ impl<E: Debug + Clone + Copy> ErrorPicker<E> {
     }
 
     pub fn get_messages(self) -> Vec<ParseError<E>> {
-        let mut cloned = self.messages.clone();
-        cloned.push(self.message);
+        let mut cloned = self.other_messages.clone();
+        cloned.push(self.my_message);
         cloned
     }
 
@@ -55,11 +60,11 @@ impl<E: Debug + Clone + Copy> ErrorPicker<E> {
             return self;
         }
         if self.longest_chain.start == initial.longest_chain.start {
-            self.messages.extend(initial.messages);
+            self.other_messages.extend(initial.other_messages);
             return ErrorPicker {
-                message: self.message,
+                my_message: self.my_message,
                 longest_chain: self.longest_chain,
-                messages: self.messages,
+                other_messages: self.other_messages,
             };
         }
         initial
