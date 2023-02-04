@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use crate::span::{Span, Trace, Tracers};
 use crate::errors::{ErrorPicker, ParseError};
 use crate::ast::{Ast, AstSpan};
+use crate::parse_context::ParseContext;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ErrorKinds {
@@ -16,12 +17,12 @@ type OkReturn<'a, O> = (Span<'a>, O, Option<ErrorCollector>);
 type ParseResult<'a, O> = Result<OkReturn<'a, O>, ErrorCollector>;
 
 pub trait Parser<'a, O> where Self: Sized {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O>;
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O>;
 
-    fn parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
+    fn parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         #[cfg(debug_assertions)]
         span.trace(Trace::StartParse);
-        let result = self.do_parse(span);
+        let result = self.do_parse(span, ctx);
 
         // Skip tracing if we're not in debug mode
         #[cfg(not(debug_assertions))]
@@ -85,38 +86,38 @@ pub trait Parser<'a, O> where Self: Sized {
     }
 }
 
-impl<'a, O, F: FnMut(&Span<'a>) -> ParseResult<'a, O>> Parser<'a, O> for F {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
-        self(span)
+impl<'a, O, F: FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, O>> Parser<'a, O> for F {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
+        self(span, ctx)
     }
 }
 
-fn eoi<'a>() -> impl FnMut(&Span<'a>) -> ParseResult<'a, ()> {
-    move |span: &Span<'a>| {
+fn eoi<'a>() -> impl FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, ()> {
+    move |span: &Span<'a>, ctx: &ParseContext| {
         if span.len() == 0 {
             return Ok((*span, (), None));
         }
-        Err(ErrorCollector::new(span, ParseError::EOI))
+        Err(ErrorCollector::new(span, ctx, ParseError::EOI))
     }
 }
 
-fn byte<'a>(b: u8) -> impl FnMut(&Span<'a>) -> ParseResult<'a, u8> {
-    move |span: &Span<'a>| {
+fn byte<'a>(b: u8) -> impl FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, u8> {
+    move |span: &Span<'a>, ctx: &ParseContext| {
         let next_byte = span.as_bytes()[0];
         if next_byte == b {
             return Ok((span.consume(1), next_byte, None));
         }
-        Err(ErrorCollector::new(span, ParseError::Byte(b)))
+        Err(ErrorCollector::new(span, ctx, ParseError::Byte(b)))
     }
 }
 
-fn ascii<'a>(c: char) -> impl FnMut(&Span<'a>) -> ParseResult<'a, char> {
-    move |span: &Span<'a>| {
+fn ascii<'a>(c: char) -> impl FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, char> {
+    move |span: &Span<'a>, ctx: &ParseContext| {
         let next_byte = span.as_bytes()[0];
         if next_byte == (c as u8) {
             return Ok((span.consume(1), next_byte as char, None));
         }
-        Err(ErrorCollector::new(span, ParseError::Char(c)))
+        Err(ErrorCollector::new(span, ctx, ParseError::Char(c)))
     }
 }
 
@@ -126,9 +127,9 @@ pub struct Peek<'a, O, O2, P: Parser<'a, O>, P2: Parser<'a, O2>> {
     _phantom: PhantomData<&'a (O, O2)>,
 }
 impl<'a, O, O2, P: Parser<'a, O>, P2: Parser<'a, O2>> Parser<'a, O> for Peek<'a, O, O2, P, P2> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
-        let (remaining, data, trailing_e) = self.target.parse(span)?;
-        self.peek_target.parse(&remaining)?;
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
+        let (remaining, data, trailing_e) = self.target.parse(span, ctx)?;
+        self.peek_target.parse(&remaining, ctx)?;
         Ok((remaining, data, trailing_e))
     }
 }
@@ -146,14 +147,14 @@ pub struct DebugParser<'a, O, P: Parser<'a, O>> {
     _phantom: PhantomData<O>,
 }
 impl<'a, O, P: Parser<'a, O>> Parser<'a, O> for DebugParser<'a, O, P> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         println!(
             "{}\n{}\n{}",
             "=====================================================================================",
             self.msg,
             "=====================================================================================",
         );
-        self.target.parse(span)
+        self.target.parse(span, ctx)
     }
 }
 pub fn debug<'a, O, P: Parser<'a, O>>(msg: &'a str, target: P) -> DebugParser<'a, O, P> {
@@ -167,13 +168,14 @@ pub struct StrMatch<'a> {
     target: &'a str
 }
 impl<'a> Parser<'a, &'a str> for StrMatch<'a> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, &'a str> {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
         let target_bytes = self.target.as_bytes();
         let source_bytes = span.as_bytes();
         for i in 0..self.target.len() {
             if target_bytes[i] != source_bytes[i] {
                 return Err(ErrorCollector::new(
                     &span.err_consume(i),
+                    ctx,
                     ParseError::Char(target_bytes[i] as char)
                 ));
             }
@@ -195,9 +197,9 @@ where PFirst: Parser<'a, OFirst>, PNext: Parser<'a, ONext> {
 impl<'a, OFirst, ONext, PFirst, PNext> Parser<'a, (OFirst, ONext)>
 for Seq<'a, OFirst, ONext, PFirst, PNext>
 where PFirst: Parser<'a, OFirst>, PNext: Parser<'a, ONext> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, (OFirst, ONext)> {
-        let (remaining, output, trailing_e) = self.first.parse(span)?;
-        match self.next.parse(&remaining) {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, (OFirst, ONext)> {
+        let (remaining, output, trailing_e) = self.first.parse(span, ctx)?;
+        match self.next.parse(&remaining, ctx) {
             Err(e) => {
                 match trailing_e {
                     None => Err(e),
@@ -232,13 +234,13 @@ pub struct Many<'a, O, P: Parser<'a, O>> {
     _phantom: PhantomData<&'a O>,
 }
 impl<'a, O, P: Parser<'a, O>> Parser<'a, Vec<O>> for Many<'a, O, P> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, Vec<O>> {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Vec<O>> {
         let mut acc = vec![];
         let mut current_span = *span;
         let mut trailing_e = None;
 
         while current_span.as_bytes().len() > 0 {
-            match self.target.parse(&current_span) {
+            match self.target.parse(&current_span, ctx) {
                 Err(e) => {
                     let combo_e = e.maybe_longest(trailing_e);
                     if acc.len() == 0 {
@@ -270,8 +272,8 @@ pub struct Opt<'a, O, P: Parser<'a, O>> {
     _phantom: PhantomData<&'a O>,
 }
 impl<'a, O, P: Parser<'a, O>> Parser<'a, Option<O>> for Opt<'a, O, P> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, Option<O>> {
-        match self.target.parse(span) {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Option<O>> {
+        match self.target.parse(span, ctx) {
             Err(e) => Ok((*span, None, Some(e))),
             Ok((remaining, output, trailing_e)) => Ok((remaining, Some(output), trailing_e)),
         }
@@ -290,13 +292,13 @@ pub struct Any<'a, O, P: Parser<'a, O>> {
     _phantom: PhantomData<&'a O>,
 }
 impl<'a, O, P: Parser<'a, O>> Parser<'a, Option<Vec<O>>> for Any<'a, O, P> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, Option<Vec<O>>> {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Option<Vec<O>>> {
         let mut acc = vec![];
         let mut current_span = *span;
         let mut trailing_e = None;
 
         while current_span.as_bytes().len() > 0 {
-            match self.target.parse(&current_span) {
+            match self.target.parse(&current_span, ctx) {
                 Err(e) => {
                     let combo = e.maybe_longest(trailing_e);
                     if acc.len() == 0 {
@@ -327,13 +329,13 @@ pub struct Count<'a, O, P: Parser<'a, O>> {
     _phantom: PhantomData<&'a O>,
 }
 impl<'a, O, P: Parser<'a, O>> Parser<'a, usize> for Count<'a, O, P> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, usize> {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, usize> {
         let mut acc = 0;
         let mut current_span = *span;
         let mut trailing_e = None;
 
         while current_span.as_bytes().len() > 0 {
-            match self.target.parse(&current_span) {
+            match self.target.parse(&current_span, ctx) {
                 Err(e) => {
                     return Ok((current_span, acc, Some(e.maybe_longest(trailing_e))));
                 }
@@ -363,10 +365,10 @@ where L: Parser<'a, O>, R: Parser<'a, O> {
 }
 impl<'a, O, L, R> Parser<'a, O> for Choose<'a, O, L, R>
 where L: Parser<'a, O>, R: Parser<'a, O> {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
-        match self.left.parse(span) {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
+        match self.left.parse(span, ctx) {
             Err(left_err) => {
-                match self.right.parse(span) {
+                match self.right.parse(span, ctx) {
                     Err(right_err) => {
                         Err(left_err.longest(right_err))
                     },
@@ -393,8 +395,8 @@ where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
 }
 impl<'a, I, O, P, F> Parser<'a, O> for Map<'a, I, O, P, F>
 where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
-        let (remaining, output, e) = self.target.parse(span)?;
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
+        let (remaining, output, e) = self.target.parse(span, ctx)?;
         let consumed = span.get_consumed(remaining.start);
         Ok((remaining, (self.cb)(output, &consumed), e))
     }
@@ -415,8 +417,8 @@ where P: Parser<'a, I>, F: Fn(&Span<'a>) -> O {
 }
 impl<'a, I, O, P, F> Parser<'a, O> for SpanMap<'a, I, O, P, F>
 where P: Parser<'a, I>, F: Fn(&Span<'a>) -> O {
-    fn do_parse(&mut self, span: &Span<'a>) -> ParseResult<'a, O> {
-        let (remaining, _, e) = self.target.parse(span)?;
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
+        let (remaining, _, e) = self.target.parse(span, ctx)?;
         let consumed = span.get_consumed(remaining.start);
         Ok((remaining, (self.cb)(&consumed), e))
     }
@@ -429,8 +431,8 @@ where P: Parser<'a, I>, F: Fn(&Span<'a>) -> O {
     }
 }
 
-fn take_while<'a, F: Fn(u8) -> bool>(e: ParseError<ErrorKinds>, f: F) -> impl FnMut(&Span<'a>) -> ParseResult<'a, &'a str> {
-    move |span: &Span<'a>| {
+fn take_while<'a, F: Fn(u8) -> bool>(e: ParseError<ErrorKinds>, f: F) -> impl FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, &'a str> {
+    move |span: &Span<'a>, ctx: &ParseContext| {
         let mut count = 0;
         let mut did_err = false;
         for index in 0..span.len() {
@@ -442,24 +444,24 @@ fn take_while<'a, F: Fn(u8) -> bool>(e: ParseError<ErrorKinds>, f: F) -> impl Fn
             count += 1;
         }
         if count == 0 {
-            return Err(ErrorCollector::new(span, e));
+            return Err(ErrorCollector::new(span, ctx, e));
         }
         let new_span = span.consume(count);
         if did_err {
-            return Ok((new_span, span.as_str(), Some(ErrorCollector::new(span, e))));
+            return Ok((new_span, span.as_str(), Some(ErrorCollector::new(span, ctx, e))));
         }
         Ok((new_span, span.as_str(), None))
     }
 }
 
-fn expect_byte<'a, F>(e: ParseError<ErrorKinds>, f: F) -> impl FnMut(&Span<'a>) -> ParseResult<'a, u8>
+fn expect_byte<'a, F>(e: ParseError<ErrorKinds>, f: F) -> impl FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, u8>
 where F: Fn(u8) -> bool {
-    move |span: &Span<'a>| {
+    move |span: &Span<'a>, ctx: &ParseContext| {
         let current_byte = span.as_bytes()[0];
         if f(current_byte) {
             return Ok((span.consume(1), current_byte, None));
         }
-        Err(ErrorCollector::new(span, e))
+        Err(ErrorCollector::new(span, ctx, e))
     }
 }
 
@@ -590,16 +592,16 @@ P: Parser<'a, O> {
         })
 }
 
-fn typelist<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
+fn typelist<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('<'), ascii('>'),
         seq(expr, whitespace().count()).then(id_str())
     ).map(|output, span| {
         let ((ast, _), id_str) = output;
         Ast::TypeAssert(span.into(), Box::new(ast), id_str)
-    }).parse(input)
+    }).parse(input, ctx)
 }
 
-fn macro_call<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
+fn macro_call<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('{'), ascii('}'),
         many(seq(expr, whitespace().any()))
     )
@@ -607,10 +609,10 @@ fn macro_call<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         Ast::Macro(span.into(), exprs.into_iter().map(|(expr, _)| {
             expr
         }).collect())
-    }).parse(input)
+    }).parse(input, ctx)
 }
 
-fn call<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
+fn call<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('('), ascii(')'),
         any(seq(expr, whitespace().any()))
     )
@@ -621,10 +623,10 @@ fn call<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
                 expr
             }).collect()),
         }
-    }).parse(input)
+    }).parse(input, ctx)
 }
 
-fn list<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
+fn list<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('['), ascii(']'),
         any(seq(expr, whitespace().any()))
     )
@@ -635,10 +637,10 @@ fn list<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
                 expr
             }).collect()),
         }
-    }).parse(input)
+    }).parse(input, ctx)
 }
 
-fn dict<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
+fn dict<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     ascii('{')
         .then(whitespace().count())
         .then(choose(pairs_multiline, pairs_oneline).or(no_pairs))
@@ -647,16 +649,16 @@ fn dict<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         .map(|output, span| {
             let ((((_, _), pairs), _), _) = output;
             Ast::Dict(span.into(), pairs)
-        }).parse(input)
+        }).parse(input, ctx)
 }
 
-fn no_pairs<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
+fn no_pairs<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
     whitespace().count().map_span(|_| {
         vec![]
-    }).parse(input)
+    }).parse(input, ctx)
 }
 
-fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
+fn pairs_oneline<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
     any(seq(pair, whitespace().count()).then(ascii(',')).then(whitespace().count()))
         .then(pair)
         .map(|output, _| {
@@ -676,10 +678,10 @@ fn pairs_oneline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((AstSpan, &'a str
                     return new_vec;
                 }
             }
-        }).parse(input)
+        }).parse(input, ctx)
 }
 
-fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
+fn pairs_multiline<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
     any(
         seq(pair, space().count())
             .then(ascii(',').opt())
@@ -697,10 +699,10 @@ fn pairs_multiline<'a>(input: &Span<'a>) -> ParseResult<'a, Vec<((AstSpan, &'a s
                     }).collect()
                 }
             }
-        }).parse(input)
+        }).parse(input, ctx)
 }
 
-fn pair<'a>(input: &Span<'a>) -> ParseResult<'a, ((AstSpan, &'a str), Ast<'a>)> {
+fn pair<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, ((AstSpan, &'a str), Ast<'a>)> {
     id_str()
         .map(|output, span| {
             (span.into(), output)
@@ -712,7 +714,7 @@ fn pair<'a>(input: &Span<'a>) -> ParseResult<'a, ((AstSpan, &'a str), Ast<'a>)> 
         .map(|output, _| {
             let ((((id, _), _), _), ast) = output;
             (id, ast)
-        }).parse(input)
+        }).parse(input, ctx)
 }
 
 fn operator_str<'a>() -> impl Parser<'a, &'a str> {
@@ -748,7 +750,7 @@ fn operator<'a>() -> impl Parser<'a, Ast<'a>> {
 }
 
 
-fn expr<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
+fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     number()
         .or(id())
         .or(macro_call)
@@ -758,7 +760,7 @@ fn expr<'a>(input: &Span<'a>) -> ParseResult<'a, Ast<'a>> {
         .or(typelist)
         .or(operator())
         .or(field())
-        .parse(input)
+    .parse(input, ctx)
 }
 
 pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector> {
@@ -767,6 +769,22 @@ pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector> {
     }
 
     let span = Span::new(input, Tracers::Nil);
+    let ctx = ParseContext {
+        collect_errors: false,
+    };
+
+    match parse_with_ctx(&span, &ctx) {
+        Ok(output) => Ok(output),
+        Err(_) => {
+            let collection_ctx = ParseContext {
+                collect_errors: true,
+            };
+            parse_with_ctx(&span, &collection_ctx)
+        }
+    }
+}
+
+fn parse_with_ctx<'a>(span: &Span<'a>, ctx: &ParseContext) -> Result<Vec<Ast<'a>>, ErrorCollector> {
     let parsed = many(
         whitespace().any()
         .then(expr)
@@ -775,7 +793,7 @@ pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector> {
             let ((_, exprs), _) = output;
             exprs
         })
-    ).parse(&span);
+    ).parse(span, ctx);
 
     match parsed {
         Ok((remaining, output, e)) => {

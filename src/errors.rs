@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use crate::span::{Span};
+use crate::parse_context::ParseContext;
 
 pub fn format_error<'a, E: Debug + Clone + Copy>(e: ErrorPicker<E>) -> String {
     format!("Syntax error at index {}. Expected one of the following:\n{}", e.get_span().start, e.get_messages().into_iter().map(|e| {
@@ -31,10 +32,11 @@ pub struct ErrorPicker<E: Debug + Clone + Copy> {
     // relatively rare.
     my_message: ParseError<E>,
     other_messages: Vec<ParseError<E>>,
+    collect_errors: bool,
 }
 
 impl<E: Debug + Clone + Copy> ErrorPicker<E> {
-    pub fn new<'a>(span: &Span<'a>, e: ParseError<E>) -> ErrorPicker<E> {
+    pub fn new<'a>(span: &Span<'a>, ctx: &ParseContext, e: ParseError<E>) -> ErrorPicker<E> {
         ErrorPicker {
             my_message: e,
             other_messages: vec![],
@@ -42,6 +44,7 @@ impl<E: Debug + Clone + Copy> ErrorPicker<E> {
                 start: span.start,
                 end: span.end,
             },
+            collect_errors: ctx.collect_errors,
         }
     }
 
@@ -61,14 +64,17 @@ impl<E: Debug + Clone + Copy> ErrorPicker<E> {
         if self.longest_chain.start > initial.longest_chain.start {
             return self;
         }
-        if self.longest_chain.start == initial.longest_chain.start {
-            self.other_messages.push(initial.my_message);
-            self.other_messages.extend(initial.other_messages);
-            return ErrorPicker {
-                my_message: self.my_message,
-                longest_chain: self.longest_chain,
-                other_messages: self.other_messages,
-            };
+        if self.collect_errors {
+            if self.longest_chain.start == initial.longest_chain.start {
+                self.other_messages.push(initial.my_message);
+                self.other_messages.extend(initial.other_messages);
+                return ErrorPicker {
+                    my_message: self.my_message,
+                    longest_chain: self.longest_chain,
+                    other_messages: self.other_messages,
+                    collect_errors: self.collect_errors,
+                };
+            }
         }
         initial
     }
