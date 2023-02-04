@@ -51,7 +51,9 @@ impl<E: Debug + Clone + Copy> ErrorPicker<E> {
 
     pub fn get_messages(self) -> Vec<ParseError<E>> {
         let mut cloned = self.other_messages.clone();
+        cloned.reverse();
         cloned.push(self.my_message);
+        cloned.reverse();
         cloned
     }
 
