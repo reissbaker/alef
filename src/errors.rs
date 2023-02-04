@@ -25,10 +25,10 @@ pub struct ParseErrorSpan {
 pub struct ErrorPicker<E: Debug + Clone + Copy> {
     longest_chain: ParseErrorSpan,
     // We separate my_message from other_messages as a perf optimization; this allows us to
-    // allocate an empty vec for new errors. Allocating an empty vec is much faster than allocating
-    // a vec with a single element (benchmarking shows nearly doubled perf on large files), and
-    // since all errors start off with an empty list, and most stay empty, this is worth a bit of
-    // extra work on the error formatting side which should be relatively rare.
+    // allocate an empty vec for new errors. Allocating an empty vec is faster than allocating a
+    // vec with a single element , and since all errors start off with an empty list, and most stay
+    // empty, this is worth a bit of extra work on the error formatting side which should be
+    // relatively rare.
     my_message: ParseError<E>,
     other_messages: Vec<ParseError<E>>,
 }
