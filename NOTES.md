@@ -14,4 +14,4 @@ instead we should stick that pointer into the ParseContext, to avoid having to
 copy it a bunch. ParseContexts are never modified or copied; we just pass the
 pointer to one around everywhere. We can keep the span methods the same, and
 instead just have them all take a ctx param that is expected to include the
-input string.
+input string. UPDATE: nope this actually was slower! No idea why.
