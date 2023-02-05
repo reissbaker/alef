@@ -17,7 +17,7 @@ type ErrorCollector = ErrorPicker<ErrorKinds>;
 type OkReturn<'a, O> = (Span<'a>, O, Option<ErrorCollector>);
 type ParseResult<'a, O> = Result<OkReturn<'a, O>, ErrorCollector>;
 
-pub trait Parser<'a, O> where Self: Sized {
+pub trait Parser<'a, O> {
     fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O>;
 
     fn parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
@@ -46,43 +46,52 @@ pub trait Parser<'a, O> where Self: Sized {
     }
 
     fn then<ONext, PNext>(self, next: PNext) -> Seq<'a, O, ONext, Self, PNext>
-    where PNext: Parser<'a, ONext> {
+    where Self: Sized, PNext: Parser<'a, ONext> {
         seq(self, next)
     }
 
-    fn or<P: Parser<'a, O>>(self, target: P) -> Choose<'a, O, Self, P> {
+    fn or<P: Parser<'a, O>>(self, target: P) -> Choose<'a, O, Self, P>
+    where Self: Sized {
         choose(self, target)
     }
 
-    fn opt(self) -> Opt<'a, O, Self> {
+    fn opt(self) -> Opt<'a, O, Self>
+    where Self: Sized {
         opt(self)
     }
 
-    fn any(self) -> Any<'a, O, Self> {
+    fn any(self) -> Any<'a, O, Self>
+    where Self: Sized {
         any(self)
     }
 
-    fn many(self) -> Many<'a, O, Self> {
+    fn many(self) -> Many<'a, O, Self>
+    where Self: Sized {
         many(self)
     }
 
-    fn map<O2, F: Fn(O, &Span<'a>) -> O2>(self, cb: F) -> Map<'a, O, O2, Self, F> {
+    fn map<O2, F: Fn(O, &Span<'a>) -> O2>(self, cb: F) -> Map<'a, O, O2, Self, F>
+    where Self: Sized {
         map(self, cb)
     }
 
-    fn map_span<O2, F: Fn(&Span<'a>) -> O2>(self, cb: F) -> SpanMap<'a, O, O2, Self, F> {
+    fn map_span<O2, F: Fn(&Span<'a>) -> O2>(self, cb: F) -> SpanMap<'a, O, O2, Self, F>
+    where Self: Sized {
         map_span(self, cb)
     }
 
-    fn count(self) -> Count<'a, O, Self> {
+    fn count(self) -> Count<'a, O, Self>
+    where Self: Sized {
         count(self)
     }
 
-    fn peek<O2, P2: Parser<'a, O2>>(self, target: P2) -> Peek<'a, O, O2, Self, P2> {
+    fn peek<O2, P2: Parser<'a, O2>>(self, target: P2) -> Peek<'a, O, O2, Self, P2>
+    where Self: Sized {
         peek(self, target)
     }
 
-    fn debug(self, msg: &'a str) -> DebugParser<'a, O, Self> {
+    fn debug(self, msg: &'a str) -> DebugParser<'a, O, Self>
+    where Self: Sized {
         debug(msg, self)
     }
 }
@@ -380,6 +389,7 @@ where L: Parser<'a, O>, R: Parser<'a, O> {
         }
     }
 }
+
 fn choose<'a, O, L, R>(left: L, right: R) -> Choose<'a, O, L, R>
 where L: Parser<'a, O>, R: Parser<'a, O> {
     Choose {
