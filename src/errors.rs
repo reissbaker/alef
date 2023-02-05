@@ -61,20 +61,22 @@ impl<E: Debug + Clone + Copy> ErrorPicker<E> {
     }
 
     pub fn longest(mut self, initial: ErrorPicker<E>) -> ErrorPicker<E> {
+        if !self.collect_errors {
+            return self;
+        }
+
         if self.longest_chain.start > initial.longest_chain.start {
             return self;
         }
-        if self.collect_errors {
-            if self.longest_chain.start == initial.longest_chain.start {
-                self.other_messages.push(initial.my_message);
-                self.other_messages.extend(initial.other_messages);
-                return ErrorPicker {
-                    my_message: self.my_message,
-                    longest_chain: self.longest_chain,
-                    other_messages: self.other_messages,
-                    collect_errors: self.collect_errors,
-                };
-            }
+        if self.longest_chain.start == initial.longest_chain.start {
+            self.other_messages.push(initial.my_message);
+            self.other_messages.extend(initial.other_messages);
+            return ErrorPicker {
+                my_message: self.my_message,
+                longest_chain: self.longest_chain,
+                other_messages: self.other_messages,
+                collect_errors: self.collect_errors,
+            };
         }
         initial
     }
