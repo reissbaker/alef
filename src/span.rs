@@ -1,88 +1,31 @@
 use std::fmt::Debug;
-
-#[derive(Debug, Clone, Copy)]
-pub enum Trace {
-    StartParse,
-    Err,
-    Consume(usize),
-    Ok(Option<()>),
-}
-
-pub trait Tracer<'a> where Self: Debug + Clone + Copy {
-    #[cfg(debug_assertions)]
-    fn trace(self, traced: Trace, span: &Span<'a>);
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Tracers {
-    Println(PrintlnTracer),
-    Nil,
-}
-
-impl<'a> Tracer<'a> for Tracers {
-    #[cfg(debug_assertions)]
-    fn trace(self, trace: Trace, span: &Span<'a>) {
-        match self {
-            Tracers::Println(tracer) => {
-                tracer.trace(trace, span);
-            }
-            Tracers::Nil => {
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PrintlnTracer {}
-impl<'a> Tracer<'a> for PrintlnTracer {
-    #[cfg(debug_assertions)]
-    fn trace(self, trace: Trace, span: &Span<'a>) {
-        match trace {
-            Trace::StartParse => {
-                println!("Trace index {} ({}): Starting parse...", span.start, span.as_bytes()[0] as char);
-            }
-            Trace::Err => {
-                println!("Trace index {} ({}): Errored", span.start, span.as_bytes()[0] as char);
-            }
-            Trace::Consume(count) => {
-                println!("Trace index {} ({}): consuming {} ({})", span.start, span.as_bytes()[0] as char, count, span.get_consumed(span.start + count).as_str());
-            }
-            Trace::Ok(Some(_)) => {
-                println!("Traced index {} ({}): Ok with trailing error", span.start, span.as_bytes()[0] as char);
-            }
-            Trace::Ok(None) => {
-                println!("Traced index {} ({}): Ok", span.start, span.as_bytes()[0] as char);
-            }
-        }
-    }
-}
+use crate::trace::{Trace, Tracer};
+use crate::parse_context::ParseContext;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Span<'a> {
     pub start: usize,
     pub end: usize,
     pub input: &'a str,
-    pub tracer: Tracers,
 }
 
 impl<'a> Span<'a> {
-    pub fn new(input: &'a str, tracer: Tracers) -> Span<'a> {
+    pub fn new(input: &'a str) -> Span<'a> {
         Span {
-            input, tracer,
+            input,
             start: 0,
             end: input.len(),
         }
     }
 
-    pub fn consume(&self, count: usize) -> Span<'a> {
+    pub fn consume(&self, ctx: &ParseContext, count: usize) -> Span<'a> {
         #[cfg(debug_assertions)]
-        self.trace(Trace::Consume(count));
+        ctx.tracer.trace(Trace::Consume(count), self);
 
         Span {
             start: self.start + count,
             end: self.end,
             input: self.input,
-            tracer: self.tracer,
         }
     }
 
@@ -91,7 +34,6 @@ impl<'a> Span<'a> {
             start: self.start + count,
             end: self.end,
             input: self.input,
-            tracer: self.tracer,
         }
     }
 
@@ -100,7 +42,6 @@ impl<'a> Span<'a> {
             start: self.start,
             end: next_start,
             input: self.input,
-            tracer: self.tracer,
         }
     }
 
@@ -121,12 +62,6 @@ impl<'a> Span<'a> {
             start: self.start + start,
             end: self.start + len,
             input: self.input,
-            tracer: self.tracer,
         }
-    }
-
-    #[cfg(debug_assertions)]
-    pub fn trace(&self, trace: Trace) {
-        self.tracer.trace(trace, self);
     }
 }

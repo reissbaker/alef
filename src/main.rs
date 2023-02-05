@@ -5,6 +5,7 @@ mod parser;
 mod macros;
 mod ir;
 mod parse_context;
+mod trace;
 
 use std::fs;
 use miette::{NamedSource, Diagnostic, SourceSpan, ErrReport};

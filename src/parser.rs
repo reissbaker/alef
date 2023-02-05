@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::fmt::Debug;
-use crate::span::{Span, Trace, Tracers};
+use crate::span::Span;
+use crate::trace::{Trace, Tracers};
 use crate::errors::{ErrorPicker, ParseError};
 use crate::ast::{Ast, AstSpan};
 use crate::parse_context::ParseContext;
@@ -21,7 +22,7 @@ pub trait Parser<'a, O> where Self: Sized {
 
     fn parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         #[cfg(debug_assertions)]
-        span.trace(Trace::StartParse);
+        ctx.trace(Trace::StartParse, span);
         let result = self.do_parse(span, ctx);
 
         // Skip tracing if we're not in debug mode
@@ -33,12 +34,12 @@ pub trait Parser<'a, O> where Self: Sized {
         match result {
             Err(e) => {
                 // TODO: trace should accept error kinds
-                span.trace(Trace::Err);
+                ctx.trace(Trace::Err, span);
                 Err(e)
             }
             Ok((remaining, data, e)) => {
                 // TODO: ditto
-                span.trace(Trace::Ok(e.as_ref().map(|_| ())));
+                ctx.trace(Trace::Ok(e.as_ref().map(|_| ())), span);
                 Ok((remaining, data, e))
             }
         }
@@ -105,7 +106,7 @@ fn byte<'a>(b: u8) -> impl FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, u8
     move |span: &Span<'a>, ctx: &ParseContext| {
         let next_byte = span.as_bytes()[0];
         if next_byte == b {
-            return Ok((span.consume(1), next_byte, None));
+            return Ok((span.consume(ctx, 1), next_byte, None));
         }
         Err(ErrorCollector::new(span, ctx, ParseError::Byte(b)))
     }
@@ -115,7 +116,7 @@ fn ascii<'a>(c: char) -> impl FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a,
     move |span: &Span<'a>, ctx: &ParseContext| {
         let next_byte = span.as_bytes()[0];
         if next_byte == (c as u8) {
-            return Ok((span.consume(1), next_byte as char, None));
+            return Ok((span.consume(ctx, 1), next_byte as char, None));
         }
         Err(ErrorCollector::new(span, ctx, ParseError::Char(c)))
     }
@@ -181,7 +182,7 @@ impl<'a> Parser<'a, &'a str> for StrMatch<'a> {
             }
         }
         let count = self.target.len();
-        Ok((span.consume(count), self.target, None))
+        Ok((span.consume(ctx, count), self.target, None))
     }
 }
 fn ascii_str<'a>(target: &'a str) -> StrMatch<'a> {
@@ -446,7 +447,7 @@ fn take_while<'a, F: Fn(u8) -> bool>(e: ParseError<ErrorKinds>, f: F) -> impl Fn
         if count == 0 {
             return Err(ErrorCollector::new(span, ctx, e));
         }
-        let new_span = span.consume(count);
+        let new_span = span.consume(ctx, count);
         if did_err {
             return Ok((new_span, span.as_str(), Some(ErrorCollector::new(span, ctx, e))));
         }
@@ -459,7 +460,7 @@ where F: Fn(u8) -> bool {
     move |span: &Span<'a>, ctx: &ParseContext| {
         let current_byte = span.as_bytes()[0];
         if f(current_byte) {
-            return Ok((span.consume(1), current_byte, None));
+            return Ok((span.consume(ctx, 1), current_byte, None));
         }
         Err(ErrorCollector::new(span, ctx, e))
     }
@@ -768,9 +769,10 @@ pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector> {
         return Ok(vec![]);
     }
 
-    let span = Span::new(input, Tracers::Nil);
+    let span = Span::new(input);
     let ctx = ParseContext {
         collect_errors: false,
+        tracer: Tracers::Nil,
     };
 
     match parse_with_ctx(&span, &ctx) {
@@ -778,6 +780,7 @@ pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector> {
         Err(_) => {
             let collection_ctx = ParseContext {
                 collect_errors: true,
+                tracer: Tracers::Nil,
             };
             parse_with_ctx(&span, &collection_ctx)
         }
