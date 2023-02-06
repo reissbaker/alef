@@ -363,13 +363,6 @@ where R: Parser<'a, O>, L: Parser<'a, O> {
     _phantom: PhantomData<&'a O>,
 }
 
-#[macro_export]
-macro_rules! choose {
-    ($l:expr, $r:expr)  => ( Choice { l: $l, r: $r, _phantom: PhantomData } );
-    ($l:expr, $r:expr,) => ( Choice { l: $l, r: $r, _phantom: PhantomData } );
-    ($o:expr, $($e:expr),*)  => ( Choice { l: $o, r: $crate::choose!($($e),*), _phantom: PhantomData });
-    ($o:expr, $($e:expr),*,) => ( Choice { l: $o, r: $crate::choose!($($e),*), _phantom: PhantomData } );
-}
 impl<'a, O, R, L> Parser<'a, O> for Choice<'a, O, R, L>
 where R: Parser<'a, O>, L: Parser<'a, O> {
     fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
@@ -388,7 +381,7 @@ where R: Parser<'a, O>, L: Parser<'a, O> {
 }
 
 #[macro_export]
-macro_rules! choose_unroll {
+macro_rules! choose {
     ($l:expr, $r:expr) => (
         (|span: &Span<'a>, ctx: &ParseContext| {
             $crate::unroll_match_inner!(span, ctx, @sep, @sep, $l, $r)
@@ -605,7 +598,7 @@ fn float<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn number<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose_unroll!(float, int).peek(trailing_values).parse(input, ctx)
+    choose!(float, int).peek(trailing_values).parse(input, ctx)
 }
 
 fn id_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
@@ -626,7 +619,7 @@ fn id<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 fn field<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     seq!(
         ascii('.'),
-        choose_unroll!(id_str, operator_str),
+        choose!(id_str, operator_str),
     ).map_span(|span| { let dotless = span.slice(1, span.len());
         Ast::Field(span.into(), dotless.as_str())
     }).parse(input, ctx)
@@ -641,11 +634,11 @@ fn newline<'a>() -> impl Parser<'a, char> {
 }
 
 fn whitespace<'a>() -> impl Parser<'a, char> {
-    choose_unroll!(space(), newline())
+    choose!(space(), newline())
 }
 
 fn trailing_values<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, char> {
-    choose_unroll!(
+    choose!(
         whitespace(),
         ascii(')'),
         ascii('}'),
@@ -734,7 +727,7 @@ fn dict<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     seq!(
         ascii('{'),
         ignore_whitespace(),
-        choose_unroll!(pairs_multiline, pairs_oneline, no_pairs),
+        choose!(pairs_multiline, pairs_oneline, no_pairs),
         ignore_whitespace(),
         ascii('}'),
     ).map(|output, span| {
@@ -812,7 +805,7 @@ fn pair<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, ((AstSpan, 
 }
 
 fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
-    choose_unroll!(
+    choose!(
         ascii_str("&&"),
         ascii_str("&"),
         ascii_str("||"),
@@ -844,7 +837,7 @@ fn operator<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>
 }
 
 fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose_unroll!(
+    choose!(
         number,
         call,
         macro_call,
