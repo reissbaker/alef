@@ -387,6 +387,72 @@ where R: Parser<'a, O>, L: Parser<'a, O> {
     }
 }
 
+#[macro_export]
+macro_rules! choose_unroll {
+    ($l:expr, $r:expr) => (
+        (|span: &Span<'a>, ctx: &ParseContext| {
+            $crate::unroll_match_inner!(span, ctx, @sep, @sep, $l, $r)
+        })
+    );
+    ($l:expr, $r:expr, $($rest:expr),*) => (
+        (|span: &Span<'a>, ctx: &ParseContext| {
+            $crate::unroll_match_inner!(span, ctx, @sep, @sep, $l, $r, $($rest),*)
+        })
+    );
+    ($l:expr, $r:expr, $($rest:expr),*,) => (
+        (|span: &Span<'a>, ctx: &ParseContext| {
+            $crate::unroll_match_inner!(span, ctx, @sep, @sep, $l, $r, $($rest),*)
+        })
+    );
+}
+#[macro_export]
+macro_rules! unroll_match_inner {
+    ($span:ident, $ctx:ident, @sep, $($e:expr),*, @sep, $last: expr) => (
+        match $last.parse($span, $ctx) {
+            Ok(data) => Ok(data),
+            Err(err) => {
+                if !$ctx.collect_errors {
+                    Err(err)
+                }
+                else {
+                    Err(
+                        $crate::unroll_match_inner!(@unroll_errors err, $($e),*)
+                    )
+                }
+            }
+        }
+    );
+
+    ($span:ident, $ctx:ident, @sep, @sep, $l: expr, $($rest:expr),+) => (
+        match $l.parse($span, $ctx) {
+            Ok(data) => Ok(data),
+            Err(err) => {
+                $crate::unroll_match_inner!($span, $ctx, @sep, err, @sep, $($rest),*)
+            }
+        }
+    );
+
+    ($span:ident, $ctx:ident, @sep, $($e:expr),*, @sep, $l: expr, $($rest:expr),+) => (
+        match $l.parse($span, $ctx) {
+            Ok(data) => Ok(data),
+            Err(err) => {
+                $crate::unroll_match_inner!($span, $ctx, @sep, err, $($e),*, @sep, $($rest),*)
+            }
+        }
+    );
+
+    (@unroll_errors $le:expr) => (
+        $le
+    );
+
+    (@unroll_errors $le:expr, $($e:expr),+ ) => (
+        $le.longest(
+            $crate::unroll_match_inner!(@unroll_errors $($e),*)
+        )
+    );
+}
+
+
 pub struct Map<'a, I, O, P, F>
 where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
     target: P,
@@ -539,7 +605,7 @@ fn float<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn number<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose!(float, int).peek(trailing_values).parse(input, ctx)
+    choose_unroll!(float, int).peek(trailing_values).parse(input, ctx)
 }
 
 fn id_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
@@ -560,7 +626,7 @@ fn id<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 fn field<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     seq!(
         ascii('.'),
-        choose!(id_str, operator_str),
+        choose_unroll!(id_str, operator_str),
     ).map_span(|span| { let dotless = span.slice(1, span.len());
         Ast::Field(span.into(), dotless.as_str())
     }).parse(input, ctx)
@@ -575,11 +641,11 @@ fn newline<'a>() -> impl Parser<'a, char> {
 }
 
 fn whitespace<'a>() -> impl Parser<'a, char> {
-    choose!(space(), newline())
+    choose_unroll!(space(), newline())
 }
 
 fn trailing_values<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, char> {
-    choose!(
+    choose_unroll!(
         whitespace(),
         ascii(')'),
         ascii('}'),
@@ -668,7 +734,7 @@ fn dict<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     seq!(
         ascii('{'),
         ignore_whitespace(),
-        choose!(pairs_multiline, pairs_oneline, no_pairs),
+        choose_unroll!(pairs_multiline, pairs_oneline, no_pairs),
         ignore_whitespace(),
         ascii('}'),
     ).map(|output, span| {
@@ -746,7 +812,7 @@ fn pair<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, ((AstSpan, 
 }
 
 fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
-    choose!(
+    choose_unroll!(
         ascii_str("&&"),
         ascii_str("&"),
         ascii_str("||"),
@@ -778,7 +844,7 @@ fn operator<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>
 }
 
 fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose!(
+    choose_unroll!(
         number,
         call,
         macro_call,
