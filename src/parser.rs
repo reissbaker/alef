@@ -383,18 +383,15 @@ where R: Parser<'a, O>, L: Parser<'a, O> {
 }
 
 #[macro_export]
-macro_rules! choices {
+macro_rules! choose {
     ($l:expr, $r:expr)  => ( Choice { l: $l, r: $r, _phantom: PhantomData } );
     ($l:expr, $r:expr,) => ( Choice { l: $l, r: $r, _phantom: PhantomData } );
-    ($o:expr, $($e:expr),*)  => ( Choice { l: $o, r: $crate::choices!($($e),*), _phantom: PhantomData });
-    ($o:expr, $($e:expr),*,) => ( Choice { l: $o, r: $crate::choices!($($e),*), _phantom: PhantomData } );
+    ($o:expr, $($e:expr),*)  => ( Choice { l: $o, r: $crate::choose!($($e),*), _phantom: PhantomData });
+    ($o:expr, $($e:expr),*,) => ( Choice { l: $o, r: $crate::choose!($($e),*), _phantom: PhantomData } );
 }
 impl<'a, O, R, L> Parser<'a, O> for Choice<'a, O, R, L>
 where R: Parser<'a, O>, L: Parser<'a, O> {
     fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        panic!("Unimplemented");
-    }
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         match self.l.parse_choice(span, ctx) {
             Err(left_err) => {
                 match self.r.parse_choice(span, ctx) {
@@ -406,26 +403,6 @@ where R: Parser<'a, O>, L: Parser<'a, O> {
             }
             default => default,
         }
-    }
-}
-
-pub struct Choose<'a, O, H>
-where H: Parser<'a, O> {
-    list: H,
-    _phantom: PhantomData<&'a O>,
-}
-impl<'a, O, H> Parser<'a, O> for Choose<'a, O, H>
-where H: Parser<'a, O> {
-    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        self.list.parse_choice(span, ctx)
-    }
-}
-
-pub fn choose<'a, O, H>(list: H) -> Choose<'a, O, H>
-where H: Parser<'a, O> {
-    Choose {
-        list,
-        _phantom: PhantomData,
     }
 }
 
@@ -577,7 +554,7 @@ fn float<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn number<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose(choices!(float, int)).peek(trailing_values).parse(input, ctx)
+    choose!(float, int).peek(trailing_values).parse(input, ctx)
 }
 
 fn id_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
@@ -596,7 +573,7 @@ fn id<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn field<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    ascii('.').then(choose(choices!(id_str, operator_str))).map_span(|span| { let dotless = span.slice(1, span.len());
+    ascii('.').then(choose!(id_str, operator_str)).map_span(|span| { let dotless = span.slice(1, span.len());
         Ast::Field(span.into(), dotless.as_str())
     }).parse(input, ctx)
 }
@@ -610,11 +587,11 @@ fn newline<'a>() -> impl Parser<'a, char> {
 }
 
 fn whitespace<'a>() -> impl Parser<'a, char> {
-    choose(choices!(space(), newline()))
+    choose!(space(), newline())
 }
 
 fn trailing_values<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, char> {
-    choose(choices!(
+    choose!(
         whitespace(),
         ascii(')'),
         ascii('}'),
@@ -628,7 +605,7 @@ fn trailing_values<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, 
             // of the same type for or() since that's usually more convenient
             // But whatever null byte here is fine I guess
             0 as char
-        })),
+        }),
     ).parse(input, ctx)
 }
 
@@ -701,7 +678,7 @@ fn list<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 fn dict<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     ascii('{')
         .then(ignore_whitespace())
-        .then(choose(choices!(pairs_multiline, pairs_oneline, no_pairs)))
+        .then(choose!(pairs_multiline, pairs_oneline, no_pairs))
         .then(ignore_whitespace())
         .then(ascii('}'))
         .map(|output, span| {
@@ -775,7 +752,7 @@ fn pair<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, ((AstSpan, 
 }
 
 fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
-    choose(choices!(
+    choose!(
         ascii_str("&&"),
         ascii_str("&"),
         ascii_str("||"),
@@ -797,7 +774,7 @@ fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a
         ascii_str(">"),
         ascii_str("<="),
         ascii_str("<"),
-    )).peek(trailing_values)
+    ).peek(trailing_values)
     .parse(input, ctx)
 }
 
@@ -808,7 +785,7 @@ fn operator<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>
 }
 
 fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose(choices!(
+    choose!(
         number,
         call,
         macro_call,
@@ -818,7 +795,7 @@ fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
         typelist,
         operator,
         field,
-    )).parse(input, ctx)
+    ).parse(input, ctx)
 }
 
 pub fn parse<'a>(input: &'a str) -> Result<Vec<Ast<'a>>, ErrorCollector> {
