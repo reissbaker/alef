@@ -375,7 +375,7 @@ where P: Parser<'a, O> {
     }
 }
 
-pub struct Homotuple<'a, O, R, L>
+pub struct Choice<'a, O, R, L>
 where R: Parser<'a, O>, L: Parser<'a, O> {
     l: L,
     r: R,
@@ -384,12 +384,12 @@ where R: Parser<'a, O>, L: Parser<'a, O> {
 
 #[macro_export]
 macro_rules! choices {
-    ($l:expr, $r:expr)  => ( Homotuple { l: $l, r: $r, _phantom: PhantomData } );
-    ($l:expr, $r:expr,) => ( Homotuple { l: $l, r: $r, _phantom: PhantomData } );
-    ($o:expr, $($e:expr),*)  => ( Homotuple { l: $o, r: $crate::choices!($($e),*), _phantom: PhantomData });
-    ($o:expr, $($e:expr),*,) => ( Homotuple { l: $o, r: $crate::choices!($($e),*), _phantom: PhantomData } );
+    ($l:expr, $r:expr)  => ( Choice { l: $l, r: $r, _phantom: PhantomData } );
+    ($l:expr, $r:expr,) => ( Choice { l: $l, r: $r, _phantom: PhantomData } );
+    ($o:expr, $($e:expr),*)  => ( Choice { l: $o, r: $crate::choices!($($e),*), _phantom: PhantomData });
+    ($o:expr, $($e:expr),*,) => ( Choice { l: $o, r: $crate::choices!($($e),*), _phantom: PhantomData } );
 }
-impl<'a, O, R, L> Parser<'a, O> for Homotuple<'a, O, R, L>
+impl<'a, O, R, L> Parser<'a, O> for Choice<'a, O, R, L>
 where R: Parser<'a, O>, L: Parser<'a, O> {
     fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         panic!("Unimplemented");
