@@ -46,6 +46,14 @@ pub trait Parser<'a, O> {
         }
     }
 
+    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
+        self.parse(span, ctx)
+    }
+
+    fn parse_seq(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
+        self.parse(span, ctx)
+    }
+
     fn then<ONext, PNext>(self, next: PNext) -> Seq<'a, O, ONext, Self, PNext>
     where Self: Sized, PNext: Parser<'a, ONext> {
         seq(self, next)
@@ -92,17 +100,11 @@ pub trait Parser<'a, O> {
     }
 }
 
-pub trait ChoiceParser<'a, O> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O>;
-}
-
 impl<'a, O, F: FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, O>> Parser<'a, O> for F {
     fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         self(span, ctx)
     }
-}
 
-impl<'a, O, F: FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, O>> ChoiceParser<'a, O> for F {
     fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         self(span, ctx)
     }
@@ -149,11 +151,6 @@ impl<'a, O, O2, P: Parser<'a, O>, P2: Parser<'a, O2>> Parser<'a, O> for Peek<'a,
         Ok((remaining, data, trailing_e))
     }
 }
-impl<'a, O, O2, P: Parser<'a, O>, P2: Parser<'a, O2>> ChoiceParser<'a, O> for Peek<'a, O, O2, P, P2> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        self.do_parse(span, ctx)
-    }
-}
 
 fn peek<'a, O, O2, P: Parser<'a, O>, P2: Parser<'a, O2>>(target: P, peek_target: P2) -> Peek<'a, O, O2, P, P2> {
     Peek {
@@ -176,11 +173,6 @@ impl<'a, O, P: Parser<'a, O>> Parser<'a, O> for DebugParser<'a, O, P> {
             "=====================================================================================",
         );
         self.target.parse(span, ctx)
-    }
-}
-impl<'a, O, P: Parser<'a, O>> ChoiceParser<'a, O> for DebugParser<'a, O, P> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        self.do_parse(span, ctx)
     }
 }
 pub fn debug<'a, O, P: Parser<'a, O>>(msg: &'a str, target: P) -> DebugParser<'a, O, P> {
@@ -208,11 +200,6 @@ impl<'a> Parser<'a, &'a str> for StrMatch<'a> {
         }
         let count = self.target.len();
         Ok((span.consume(ctx, count), self.target, None))
-    }
-}
-impl<'a> ChoiceParser<'a, &'a str> for StrMatch<'a> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
-        self.do_parse(span, ctx)
     }
 }
 fn ascii_str<'a>(target: &'a str) -> StrMatch<'a> {
@@ -247,13 +234,6 @@ where PFirst: Parser<'a, OFirst>, PNext: Parser<'a, ONext> {
                 }))
             }
         }
-    }
-}
-impl<'a, OFirst, ONext, PFirst, PNext> ChoiceParser<'a, (OFirst, ONext)>
-for Seq<'a, OFirst, ONext, PFirst, PNext>
-where PFirst: Parser<'a, OFirst>, PNext: Parser<'a, ONext> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, (OFirst, ONext)> {
-        self.do_parse(span, ctx)
     }
 }
 
@@ -297,11 +277,6 @@ impl<'a, O, P: Parser<'a, O>> Parser<'a, Vec<O>> for Many<'a, O, P> {
         Ok((current_span, acc, None))
     }
 }
-impl<'a, O, P: Parser<'a, O>> ChoiceParser<'a, Vec<O>> for Many<'a, O, P> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Vec<O>> {
-        self.do_parse(span, ctx)
-    }
-}
 fn many<'a, O, P>(target: P) -> Many<'a, O, P>
 where P: Parser<'a, O> {
     Many {
@@ -320,11 +295,6 @@ impl<'a, O, P: Parser<'a, O>> Parser<'a, Option<O>> for Opt<'a, O, P> {
             Err(e) => Ok((*span, None, Some(e))),
             Ok((remaining, output, trailing_e)) => Ok((remaining, Some(output), trailing_e)),
         }
-    }
-}
-impl<'a, O, P: Parser<'a, O>> ChoiceParser<'a, Option<O>> for Opt<'a, O, P> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Option<O>> {
-        self.do_parse(span, ctx)
     }
 }
 fn opt<'a, O, P>(target: P) -> Opt<'a, O, P>
@@ -364,11 +334,6 @@ impl<'a, O, P: Parser<'a, O>> Parser<'a, Option<Vec<O>>> for Any<'a, O, P> {
         Ok((current_span, Some(acc), None))
     }
 }
-impl<'a, O, P: Parser<'a, O>> ChoiceParser<'a, Option<Vec<O>>> for Any<'a, O, P> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Option<Vec<O>>> {
-        self.do_parse(span, ctx)
-    }
-}
 fn any<'a, O, P>(target: P) -> Any<'a, O, P>
 where P: Parser<'a, O> {
     Any {
@@ -402,11 +367,6 @@ impl<'a, O, P: Parser<'a, O>> Parser<'a, usize> for Count<'a, O, P> {
         Ok((current_span, acc, None))
     }
 }
-impl<'a, O, P: Parser<'a, O>> ChoiceParser<'a, usize> for Count<'a, O, P> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, usize> {
-        self.do_parse(span, ctx)
-    }
-}
 fn count<'a, O, P>(target: P) -> Count<'a, O, P>
 where P: Parser<'a, O> {
     Count {
@@ -415,12 +375,29 @@ where P: Parser<'a, O> {
     }
 }
 
-impl<'a, O, R, L> ChoiceParser<'a, O> for (R, L)
-where R: ChoiceParser<'a, O>, L: ChoiceParser<'a, O> {
+pub struct Homotuple<'a, O, R, L>
+where R: Parser<'a, O>, L: Parser<'a, O> {
+    l: L,
+    r: R,
+    _phantom: PhantomData<&'a O>,
+}
+
+#[macro_export]
+macro_rules! to_homogenous {
+    ($l:expr, $r:expr)  => ( Homotuple { l: $l, r: $r, _phantom: PhantomData } );
+    ($l:expr, $r:expr,) => ( Homotuple { l: $l, r: $r, _phantom: PhantomData } );
+    ($o:expr, $($e:expr),*)  => ( Homotuple { l: $o, r: $crate::to_homogenous!($($e),*), _phantom: PhantomData });
+    ($o:expr, $($e:expr),*,) => ( Homotuple { l: $o, r: $crate::to_homogenous!($($e),*), _phantom: PhantomData } );
+}
+impl<'a, O, R, L> Parser<'a, O> for Homotuple<'a, O, R, L>
+where R: Parser<'a, O>, L: Parser<'a, O> {
+    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
+        panic!("Unimplemented");
+    }
     fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        match self.0.parse_choice(span, ctx) {
+        match self.l.parse_choice(span, ctx) {
             Err(left_err) => {
-                match self.1.parse_choice(span, ctx) {
+                match self.r.parse_choice(span, ctx) {
                     Err(right_err) => {
                         Err(left_err.longest(right_err))
                     },
@@ -433,25 +410,19 @@ where R: ChoiceParser<'a, O>, L: ChoiceParser<'a, O> {
 }
 
 pub struct Choose<'a, O, H>
-where H: ChoiceParser<'a, O> {
+where H: Parser<'a, O> {
     list: H,
     _phantom: PhantomData<&'a O>,
 }
 impl<'a, O, H> Parser<'a, O> for Choose<'a, O, H>
-where H: ChoiceParser<'a, O> {
+where H: Parser<'a, O> {
     fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         self.list.parse_choice(span, ctx)
     }
 }
-impl<'a, O, H> ChoiceParser<'a, O> for Choose<'a, O, H>
-where H: ChoiceParser<'a, O> {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        self.do_parse(span, ctx)
-    }
-}
 
 pub fn choose<'a, O, H>(list: H) -> Choose<'a, O, H>
-where H: ChoiceParser<'a, O> {
+where H: Parser<'a, O> {
     Choose {
         list,
         _phantom: PhantomData,
@@ -470,12 +441,6 @@ where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
         let (remaining, output, e) = self.target.parse(span, ctx)?;
         let consumed = span.get_consumed(remaining.start);
         Ok((remaining, (self.cb)(output, &consumed), e))
-    }
-}
-impl<'a, I, O, P, F> ChoiceParser<'a, O> for Map<'a, I, O, P, F>
-where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        self.do_parse(span, ctx)
     }
 }
 fn map<'a, I, O, P, F>(target: P, cb: F) -> Map<'a, I, O, P, F>
@@ -498,12 +463,6 @@ where P: Parser<'a, I>, F: Fn(&Span<'a>) -> O {
         let (remaining, _, e) = self.target.parse(span, ctx)?;
         let consumed = span.get_consumed(remaining.start);
         Ok((remaining, (self.cb)(&consumed), e))
-    }
-}
-impl<'a, I, O, P, F> ChoiceParser<'a, O> for SpanMap<'a, I, O, P, F>
-where P: Parser<'a, I>, F: Fn(&Span<'a>) -> O {
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        self.do_parse(span, ctx)
     }
 }
 fn map_span<'a, I, O, P, F>(target: P, cb: F) -> SpanMap<'a, I, O, P, F>
@@ -563,7 +522,7 @@ where F: Fn(u8) -> bool {
     }
 }
 
-fn digit<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char> {
+fn digit<'a>() -> impl Parser<'a, char> {
     expect_byte(ParseError::Kind(ErrorKinds::Digit), |byte| {
         byte.is_ascii_digit()
     }).map(|byte, _| {
@@ -571,19 +530,19 @@ fn digit<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char> {
     })
 }
 
-fn digit_str<'a>() -> impl Parser<'a, &'a str> + ChoiceParser<'a, &'a str> {
+fn digit_str<'a>() -> impl Parser<'a, &'a str> {
     take_while(ParseError::Kind(ErrorKinds::Digit), |byte| {
         byte.is_ascii_digit()
     })
 }
 
-fn alphanumeric_str<'a>() -> impl Parser<'a, &'a str> + ChoiceParser<'a, &'a str> {
+fn alphanumeric_str<'a>() -> impl Parser<'a, &'a str> {
     take_while(ParseError::Kind(ErrorKinds::Alphanumeric), |byte| {
         byte.is_ascii_alphanumeric()
     })
 }
 
-fn alphanumeric<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char> {
+fn alphanumeric<'a>() -> impl Parser<'a, char> {
     expect_byte(ParseError::Kind(ErrorKinds::Alphanumeric), |byte| {
         byte.is_ascii_alphanumeric()
     }).map(|byte, _| {
@@ -591,13 +550,13 @@ fn alphanumeric<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char> {
     })
 }
 
-fn alphanumeric_or_underscore_str<'a>() -> impl Parser<'a, &'a str> + ChoiceParser<'a, &'a str> {
+fn alphanumeric_or_underscore_str<'a>() -> impl Parser<'a, &'a str> {
     take_while(ParseError::Kind(ErrorKinds::Alphanumeric), |byte| {
         byte.is_ascii_alphanumeric() || byte == 95
     })
 }
 
-fn alphabetic<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char> {
+fn alphabetic<'a>() -> impl Parser<'a, char> {
     expect_byte(ParseError::Kind(ErrorKinds::Alphabetic), |byte| {
         byte.is_ascii_alphabetic()
     }).map(|byte, _| {
@@ -618,7 +577,7 @@ fn float<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn number<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose(from_tuple!(float, int)).peek(trailing_values).parse(input, ctx)
+    choose(to_homogenous!(float, int)).peek(trailing_values).parse(input, ctx)
 }
 
 fn id_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
@@ -637,26 +596,25 @@ fn id<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn field<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    ascii('.').then(choose(from_tuple!(id_str, operator_str))).map_span(|span| {
-        let dotless = span.slice(1, span.len());
+    ascii('.').then(choose(to_homogenous!(id_str, operator_str))).map_span(|span| { let dotless = span.slice(1, span.len());
         Ast::Field(span.into(), dotless.as_str())
     }).parse(input, ctx)
 }
 
-fn space<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char> {
+fn space<'a>() -> impl Parser<'a, char> {
     ascii(' ')
 }
 
-fn newline<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char> {
+fn newline<'a>() -> impl Parser<'a, char> {
     ascii('\n')
 }
 
-fn whitespace<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char>{
-    choose(from_tuple!(space(), newline()))
+fn whitespace<'a>() -> impl Parser<'a, char> {
+    choose(to_homogenous!(space(), newline()))
 }
 
 fn trailing_values<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, char> {
-    choose(from_tuple!(
+    choose(to_homogenous!(
         whitespace(),
         ascii(')'),
         ascii('}'),
@@ -674,7 +632,7 @@ fn trailing_values<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, 
     ).parse(input, ctx)
 }
 
-fn surrounded<'a, O, FO, LO, F, L, P>(first: F, last: L, parser: P) -> impl Parser<'a, O> + ChoiceParser<'a, O>
+fn surrounded<'a, O, FO, LO, F, L, P>(first: F, last: L, parser: P) -> impl Parser<'a, O>
 where O: 'a,
 FO: 'a,
 LO: 'a,
@@ -743,7 +701,7 @@ fn list<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 fn dict<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     ascii('{')
         .then(ignore_whitespace())
-        .then(choose(from_tuple!(pairs_multiline, pairs_oneline, no_pairs)))
+        .then(choose(to_homogenous!(pairs_multiline, pairs_oneline, no_pairs)))
         .then(ignore_whitespace())
         .then(ascii('}'))
         .map(|output, span| {
@@ -817,7 +775,7 @@ fn pair<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, ((AstSpan, 
 }
 
 fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
-    choose(from_tuple!(
+    choose(to_homogenous!(
         ascii_str("&&"),
         ascii_str("&"),
         ascii_str("||"),
@@ -850,7 +808,7 @@ fn operator<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>
 }
 
 fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose(from_tuple!(
+    choose(to_homogenous!(
         number,
         call,
         macro_call,
