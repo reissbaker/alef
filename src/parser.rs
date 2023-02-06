@@ -778,9 +778,9 @@ fn operator<'a>() -> impl Parser<'a, Ast<'a>> {
 
 fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     number()
-        .or(id())
-        .or(macro_call)
         .or(call)
+        .or(macro_call)
+        .or(id())
         .or(dict)
         .or(list)
         .or(typelist)
