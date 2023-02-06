@@ -46,10 +46,6 @@ pub trait Parser<'a, O> {
         }
     }
 
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        self.parse(span, ctx)
-    }
-
     fn parse_seq(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         self.parse(span, ctx)
     }
@@ -102,10 +98,6 @@ pub trait Parser<'a, O> {
 
 impl<'a, O, F: FnMut(&Span<'a>, &ParseContext) -> ParseResult<'a, O>> Parser<'a, O> for F {
     fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        self(span, ctx)
-    }
-
-    fn parse_choice(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
         self(span, ctx)
     }
 }
@@ -392,9 +384,9 @@ macro_rules! choose {
 impl<'a, O, R, L> Parser<'a, O> for Choice<'a, O, R, L>
 where R: Parser<'a, O>, L: Parser<'a, O> {
     fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        match self.l.parse_choice(span, ctx) {
+        match self.l.parse(span, ctx) {
             Err(left_err) => {
-                match self.r.parse_choice(span, ctx) {
+                match self.r.parse(span, ctx) {
                     Err(right_err) => {
                         Err(left_err.longest(right_err))
                     },
