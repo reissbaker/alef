@@ -383,11 +383,11 @@ where R: Parser<'a, O>, L: Parser<'a, O> {
 }
 
 #[macro_export]
-macro_rules! to_homogenous {
+macro_rules! choices {
     ($l:expr, $r:expr)  => ( Homotuple { l: $l, r: $r, _phantom: PhantomData } );
     ($l:expr, $r:expr,) => ( Homotuple { l: $l, r: $r, _phantom: PhantomData } );
-    ($o:expr, $($e:expr),*)  => ( Homotuple { l: $o, r: $crate::to_homogenous!($($e),*), _phantom: PhantomData });
-    ($o:expr, $($e:expr),*,) => ( Homotuple { l: $o, r: $crate::to_homogenous!($($e),*), _phantom: PhantomData } );
+    ($o:expr, $($e:expr),*)  => ( Homotuple { l: $o, r: $crate::choices!($($e),*), _phantom: PhantomData });
+    ($o:expr, $($e:expr),*,) => ( Homotuple { l: $o, r: $crate::choices!($($e),*), _phantom: PhantomData } );
 }
 impl<'a, O, R, L> Parser<'a, O> for Homotuple<'a, O, R, L>
 where R: Parser<'a, O>, L: Parser<'a, O> {
@@ -577,7 +577,7 @@ fn float<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn number<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose(to_homogenous!(float, int)).peek(trailing_values).parse(input, ctx)
+    choose(choices!(float, int)).peek(trailing_values).parse(input, ctx)
 }
 
 fn id_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
@@ -596,7 +596,7 @@ fn id<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn field<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    ascii('.').then(choose(to_homogenous!(id_str, operator_str))).map_span(|span| { let dotless = span.slice(1, span.len());
+    ascii('.').then(choose(choices!(id_str, operator_str))).map_span(|span| { let dotless = span.slice(1, span.len());
         Ast::Field(span.into(), dotless.as_str())
     }).parse(input, ctx)
 }
@@ -610,11 +610,11 @@ fn newline<'a>() -> impl Parser<'a, char> {
 }
 
 fn whitespace<'a>() -> impl Parser<'a, char> {
-    choose(to_homogenous!(space(), newline()))
+    choose(choices!(space(), newline()))
 }
 
 fn trailing_values<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, char> {
-    choose(to_homogenous!(
+    choose(choices!(
         whitespace(),
         ascii(')'),
         ascii('}'),
@@ -701,7 +701,7 @@ fn list<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 fn dict<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     ascii('{')
         .then(ignore_whitespace())
-        .then(choose(to_homogenous!(pairs_multiline, pairs_oneline, no_pairs)))
+        .then(choose(choices!(pairs_multiline, pairs_oneline, no_pairs)))
         .then(ignore_whitespace())
         .then(ascii('}'))
         .map(|output, span| {
@@ -775,7 +775,7 @@ fn pair<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, ((AstSpan, 
 }
 
 fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
-    choose(to_homogenous!(
+    choose(choices!(
         ascii_str("&&"),
         ascii_str("&"),
         ascii_str("||"),
@@ -808,7 +808,7 @@ fn operator<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>
 }
 
 fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose(to_homogenous!(
+    choose(choices!(
         number,
         call,
         macro_call,
