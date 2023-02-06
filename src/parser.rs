@@ -618,26 +618,26 @@ fn float<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
 }
 
 fn number<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    choose(from_tuple!(float, int)).peek(trailing_values()).parse(input, ctx)
+    choose(from_tuple!(float, int)).peek(trailing_values).parse(input, ctx)
 }
 
-fn id_str<'a>() -> impl Parser<'a, &'a str> + ChoiceParser<'a, &'a str> {
+fn id_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
     alphabetic()
         .then(alphanumeric_or_underscore_str().opt())
         .then(ascii('?').opt())
-        .peek(trailing_values())
+        .peek(trailing_values)
         .map_span(|span| {
             span.as_str()
-        })
+        }).parse(input, ctx)
 }
 fn id<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    id_str().map(|output, span| {
+    map(id_str, |output, span| {
         Ast::Identifier(span.into(), output)
     }).parse(input, ctx)
 }
 
 fn field<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    ascii('.').then(choose(from_tuple!(id_str(), operator_str))).map_span(|span| {
+    ascii('.').then(choose(from_tuple!(id_str, operator_str))).map_span(|span| {
         let dotless = span.slice(1, span.len());
         Ast::Field(span.into(), dotless.as_str())
     }).parse(input, ctx)
@@ -655,7 +655,7 @@ fn whitespace<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char>{
     choose(from_tuple!(space(), newline()))
 }
 
-fn trailing_values<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char>{
+fn trailing_values<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, char> {
     choose(from_tuple!(
         whitespace(),
         ascii(')'),
@@ -671,7 +671,7 @@ fn trailing_values<'a>() -> impl Parser<'a, char> + ChoiceParser<'a, char>{
             // But whatever null byte here is fine I guess
             0 as char
         })),
-    )
+    ).parse(input, ctx)
 }
 
 fn surrounded<'a, O, FO, LO, F, L, P>(first: F, last: L, parser: P) -> impl Parser<'a, O> + ChoiceParser<'a, O>
@@ -694,7 +694,7 @@ P: Parser<'a, O> {
 
 fn typelist<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     surrounded(ascii('<'), ascii('>'),
-        seq(expr, ignore_whitespace()).then(id_str())
+        seq(expr, ignore_whitespace()).then(id_str)
     ).map(|output, span| {
         let ((ast, _), id_str) = output;
         Ast::TypeAssert(span.into(), Box::new(ast), id_str)
@@ -803,18 +803,17 @@ fn pairs_multiline<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, 
 }
 
 fn pair<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, ((AstSpan, &'a str), Ast<'a>)> {
-    id_str()
-        .map(|output, span| {
-            (span.into(), output)
-        })
-        .then(ignore_whitespace())
-        .then(ascii(':'))
-        .then(ignore_whitespace())
-        .then(expr)
-        .map(|output, _| {
-            let ((((id, _), _), _), ast) = output;
-            (id, ast)
-        }).parse(input, ctx)
+    map(id_str, |output, span| {
+        (span.into(), output)
+    })
+    .then(ignore_whitespace())
+    .then(ascii(':'))
+    .then(ignore_whitespace())
+    .then(expr)
+    .map(|output, _| {
+        let ((((id, _), _), _), ast) = output;
+        (id, ast)
+    }).parse(input, ctx)
 }
 
 fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
@@ -840,7 +839,7 @@ fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a
         ascii_str(">"),
         ascii_str("<="),
         ascii_str("<"),
-    )).peek(trailing_values())
+    )).peek(trailing_values)
     .parse(input, ctx)
 }
 
@@ -849,7 +848,6 @@ fn operator<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>
         Ast::Identifier(span.into(), string)
     }).parse(input, ctx)
 }
-
 
 fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     choose(from_tuple!(
