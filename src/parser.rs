@@ -380,27 +380,72 @@ where R: Parser<'a, O>, L: Parser<'a, O> {
     }
 }
 
+/*
+ * A macro that generates a parsing closure by pattern-matching the given parsers responses,
+ * returning the first one that is successful, or a compilation of their errors if none are.
+ * For example, given parsers a, b, and c, it generates something like the following closure:
+ *
+ *     |span: &Span<'a>, ctx: &ParseContext| {
+ *         match a.parse(span, ctx) {
+ *             Ok(data) => Ok(data),
+ *             Err(e_a) => {
+ *                 match b.parse(span, ctx) {
+ *                     Ok(data) => Ok(data),
+ *                     Err(e_b) => {
+ *                         match c.parse(span, ctx) {
+ *                             Ok(data) => Ok(data),
+ *                             Err(e_c) => {
+ *                                 if !ctx.collect_errors {
+ *                                   e_c
+ *                                 }
+ *                                 else {
+ *                                     Err(e_a.longest(
+ *                                         e_b.longest(
+ *                                             e_c
+ *                                         )
+ *                                     ))
+ *                                 }
+ *                             }
+ *                         }
+ *                     }
+ *                 }
+ *             }
+ *         }
+ *     }
+ *
+ * This is obviously a huge pain to write by hand, hence the closure-generating macro. Previously
+ * we used a homogenous list that recursively called .parse on itself, similar to seq!, but since
+ * choose! has to combine all errors and can't early-exit on first error like seq!, there was a
+ * performance penalty on all of the recursive calls and the repeated forward-propagation of any
+ * previous error in the list. While this macro is more complicated than seq!, it generates
+ * significantly faster runtime code than the old homogenous list implementation.
+ */
 #[macro_export]
 macro_rules! choose {
+    /*
+     * Pattern matches for external calls
+     */
     ($l:expr, $r:expr) => (
         (|span: &Span<'a>, ctx: &ParseContext| {
-            $crate::unroll_match_inner!(span, ctx, @sep, @sep, $l, $r)
+            $crate::choose!(@inner span, ctx, @sep, @sep, $l, $r)
         })
     );
     ($l:expr, $r:expr, $($rest:expr),*) => (
         (|span: &Span<'a>, ctx: &ParseContext| {
-            $crate::unroll_match_inner!(span, ctx, @sep, @sep, $l, $r, $($rest),*)
+            $crate::choose!(@inner span, ctx, @sep, @sep, $l, $r, $($rest),*)
         })
     );
     ($l:expr, $r:expr, $($rest:expr),*,) => (
         (|span: &Span<'a>, ctx: &ParseContext| {
-            $crate::unroll_match_inner!(span, ctx, @sep, @sep, $l, $r, $($rest),*)
+            $crate::choose!(@inner span, ctx, @sep, @sep, $l, $r, $($rest),*)
         })
     );
-}
-#[macro_export]
-macro_rules! unroll_match_inner {
-    ($span:ident, $ctx:ident, @sep, $($e:expr),*, @sep, $last: expr) => (
+
+    /*
+     * Pattern matches for internal match generation
+     */
+    // Base case: we are at the last parser expression
+    (@inner $span:ident, $ctx:ident, @sep, $($e:expr),*, @sep, $last: expr) => (
         match $last.parse($span, $ctx) {
             Ok(data) => Ok(data),
             Err(err) => {
@@ -409,42 +454,48 @@ macro_rules! unroll_match_inner {
                 }
                 else {
                     Err(
-                        $crate::unroll_match_inner!(@unroll_errors err, $($e),*)
+                        $crate::choose!(@unroll_errors err, $($e),*)
                     )
                 }
             }
         }
     );
 
-    ($span:ident, $ctx:ident, @sep, @sep, $l: expr, $($rest:expr),+) => (
+    // Base case: we are at the first parser expression, and no errors have been found yet
+    (@inner $span:ident, $ctx:ident, @sep, @sep, $l: expr, $($rest:expr),+) => (
         match $l.parse($span, $ctx) {
             Ok(data) => Ok(data),
             Err(err) => {
-                $crate::unroll_match_inner!($span, $ctx, @sep, err, @sep, $($rest),*)
+                $crate::choose!(@inner $span, $ctx, @sep, err, @sep, $($rest),*)
             }
         }
     );
 
-    ($span:ident, $ctx:ident, @sep, $($e:expr),*, @sep, $l: expr, $($rest:expr),+) => (
+    // Recursive case: we have collected some errors, and more parsing exprs remain to be processed
+    (@inner $span:ident, $ctx:ident, @sep, $($e:expr),*, @sep, $l: expr, $($rest:expr),+) => (
         match $l.parse($span, $ctx) {
             Ok(data) => Ok(data),
             Err(err) => {
-                $crate::unroll_match_inner!($span, $ctx, @sep, err, $($e),*, @sep, $($rest),*)
+                $crate::choose!(@inner $span, $ctx, @sep, err, $($e),*, @sep, $($rest),*)
             }
         }
     );
 
+    /*
+     * Pattern matches for error unrolling
+     */
+    // Base case: we are on the last error
     (@unroll_errors $le:expr) => (
         $le
     );
 
+    // Recursive case: we have more than one errors remaining to be processed
     (@unroll_errors $le:expr, $($e:expr),+ ) => (
         $le.longest(
-            $crate::unroll_match_inner!(@unroll_errors $($e),*)
+            $crate::choose!(@unroll_errors $($e),*)
         )
     );
 }
-
 
 pub struct Map<'a, I, O, P, F>
 where P: Parser<'a, I>, F: Fn(I, &Span<'a>) -> O {
