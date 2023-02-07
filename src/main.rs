@@ -1,5 +1,3 @@
-#[macro_use]
-mod from_tuple;
 mod span;
 mod errors;
 mod ast;

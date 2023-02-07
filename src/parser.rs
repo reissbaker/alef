@@ -5,7 +5,6 @@ use crate::trace::{Trace, Tracers};
 use crate::errors::{ErrorPicker, ParseError};
 use crate::ast::{Ast, AstSpan};
 use crate::parse_context::ParseContext;
-use crate::from_tuple;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ErrorKinds {
