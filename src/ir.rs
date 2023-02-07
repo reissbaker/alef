@@ -52,7 +52,7 @@ pub enum Ir<'a> {
 }
 
 pub fn to_ir_vec<'a, 'b>(source_path: &'a str, ast_vec: &Vec<Ast<'b>>) -> Vec<Ir<'a>> {
-    iter_to_ir_vec(source_path, ast_vec.into_iter())
+    iter_to_ir_vec(source_path, ast_vec.iter())
 }
 
 fn iter_to_ir_vec<'a, 'b>(source_path: &'a str, ast_iter: std::slice::Iter<'b, Ast<'b>>) -> Vec<Ir<'a>> {
@@ -93,28 +93,12 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> Ir<'a> {
             if args.len() <= 2 {
                 panic!("not enough macro args");
             }
-            let mut args_iter = args.into_iter();
+            let mut args_iter = args.iter();
 
             match args_iter.next().unwrap() {
                 Ast::Identifier(_, macro_name) => {
                     match *macro_name {
-                        "let" => {
-                            match args_iter.next().unwrap() {
-                                Ast::Identifier(id_span, id_str) => {
-                                    Ir::Let(
-                                        IrSpan::from_ast_span(source_path, span),
-                                        (
-                                            IrSpan::from_ast_span(source_path, &id_span),
-                                            (*id_str).into()
-                                        ),
-                                        Box::new(ast_to_ir(source_path, args_iter.next().unwrap()))
-                                    )
-                                }
-                                _ => {
-                                    panic!("Second arg of let must be an ID");
-                                }
-                            }
-                        }
+                        "let" => parse_let(source_path, span, args_iter),
                         "set" => {
                             if args.len() != 3 {
                                 panic!("Too many arguments for set");
@@ -123,10 +107,7 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> Ir<'a> {
                                 Ast::Identifier(id_span, id_str) => {
                                     Ir::Set(
                                         IrSpan::from_ast_span(source_path, span),
-                                        (
-                                            IrSpan::from_ast_span(source_path, &id_span),
-                                            (*id_str).into()
-                                        ),
+                                        parse_id(source_path, id_span, id_str),
                                         Box::new(ast_to_ir(source_path, args_iter.next().unwrap()))
                                     )
                                 }
@@ -143,10 +124,7 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> Ir<'a> {
                                             let arglist = to_ir_arglist(source_path, items);
                                             Ir::Let(
                                                 IrSpan::from_ast_span(source_path, span),
-                                                (
-                                                    IrSpan::from_ast_span(source_path, id_span),
-                                                    (*id_str).into()
-                                                ),
+                                                parse_id(source_path, id_span, id_str),
                                                 Box::new(
                                                     Ir::Lambda(
                                                         IrSpan::from_ast_span(source_path, span),
@@ -212,7 +190,7 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> Ir<'a> {
             Ir::Nil(IrSpan::from_ast_span(source_path, span))
         }
         Ast::Identifier(span, id_str) => {
-            Ir::Id((IrSpan::from_ast_span(source_path, &span), (*id_str).into()))
+            Ir::Id(parse_id(source_path, span, id_str))
         }
         Ast::Field(_, _) => {
             panic!("actually throw an error here; this is a field without a prior expr")
@@ -227,7 +205,7 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> Ir<'a> {
 }
 
 fn to_ir_arglist<'a, 'b>(source_path: &'a str, list: &Vec<Ast<'b>>) -> ArgList<'a> {
-    list.into_iter().map(|item| {
+    list.iter().map(|item| {
         match item {
             // TODO FIXME this span is not the right span for the id string
             Ast::TypeAssert(todo_fixme_span, type_ast, id) => {
@@ -259,10 +237,36 @@ fn to_ir_arglist<'a, 'b>(source_path: &'a str, list: &Vec<Ast<'b>>) -> ArgList<'
     }).collect()
 }
 fn to_ir_pairs<'a, 'b>(source_path: &'a str, pairs: &ast::DictPairs<'b>) -> DictPairs<'a> {
-    pairs.into_iter().map(|((span, id_str), ast)| {
+    pairs.iter().map(|((span, id_str), ast)| {
         (
             (IrSpan::from_ast_span(source_path, &span), String::from(*id_str)),
             ast_to_ir(source_path, ast)
         )
     }).collect()
+}
+
+fn parse_id<'a, 'b>(source_path: &'a str, span: &AstSpan, id: &'b str) -> Id<'a> {
+    (IrSpan::from_ast_span(source_path, &span), (*id).into())
+}
+
+fn parse_let<'a, 'b>(source_path: &'a str, span: &AstSpan, mut args_iter: core::slice::Iter<Ast<'b>>) -> Ir<'a> {
+    match args_iter.next().unwrap() {
+        Ast::Identifier(id_span, id_str) => {
+            let value = args_iter.next().unwrap();
+
+            let mut peekable = args_iter.peekable();
+            if peekable.peek().is_some() {
+                panic!("Too many args to let");
+            }
+
+            Ir::Let(
+                IrSpan::from_ast_span(source_path, span),
+                parse_id(source_path, id_span, id_str),
+                Box::new(ast_to_ir(source_path, value))
+            )
+        }
+        _ => {
+            panic!("Second arg of let must be an ID");
+        }
+    }
 }
