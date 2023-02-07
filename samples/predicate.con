@@ -1,0 +1,5 @@
+{let MAX 5}
+
+{def sum_less_than_max? [a b]
+  ((a.+ b).< MAX)
+}
