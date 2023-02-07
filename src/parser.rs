@@ -360,7 +360,7 @@ where P: Parser<'a, O> {
  * returning the first one that is successful, or a compilation of their errors if none are.
  * For example, given parsers a, b, and c, it generates something like the following closure:
  *
- *     |span: &Span<'a>, ctx: &ParseContext| {
+ *     (|span: &Span<'a>, ctx: &ParseContext| {
  *         match a.parse(span, ctx) {
  *             Ok(data) => Ok(data),
  *             Err(e_a) => {
@@ -386,7 +386,7 @@ where P: Parser<'a, O> {
  *                 }
  *             }
  *         }
- *     }
+ *     })
  *
  * This is obviously a huge pain to write by hand, hence the closure-generating macro. Previously
  * we used a homogenous list that recursively called .parse on itself, similar to seq!, but since
