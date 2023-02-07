@@ -356,30 +356,6 @@ where P: Parser<'a, O> {
     }
 }
 
-pub struct Choice<'a, O, R, L>
-where R: Parser<'a, O>, L: Parser<'a, O> {
-    l: L,
-    r: R,
-    _phantom: PhantomData<&'a O>,
-}
-
-impl<'a, O, R, L> Parser<'a, O> for Choice<'a, O, R, L>
-where R: Parser<'a, O>, L: Parser<'a, O> {
-    fn do_parse(&mut self, span: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, O> {
-        match self.l.parse(span, ctx) {
-            Err(left_err) => {
-                match self.r.parse(span, ctx) {
-                    Err(right_err) => {
-                        Err(left_err.longest(right_err))
-                    },
-                    default => default,
-                }
-            }
-            default => default,
-        }
-    }
-}
-
 /*
  * A macro that generates a parsing closure by pattern-matching the given parsers responses,
  * returning the first one that is successful, or a compilation of their errors if none are.
