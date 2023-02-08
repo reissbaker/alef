@@ -45,10 +45,7 @@ fn main() -> miette::Result<()> {
                 })
             })?;
 
-            println!("Parse success!\nExpressions parsed:");
-            for (pos, expr) in parsed.iter().enumerate() {
-                println!("\n{}: {:?}", pos + 1, expr);
-            }
+            println!("Parse success! Converting to IR...");
 
             let ir = to_ir_vec(&path, &parsed).map_err(|e| {
                 let parse_file = file.clone();
@@ -59,7 +56,7 @@ fn main() -> miette::Result<()> {
                 })
             })?;
 
-            println!("\nIR convert success!\nIR:");
+            println!("IR convert success!\nIR:");
             for (pos, expr) in ir.iter().enumerate() {
                 println!("\n{}: {:?}", pos + 1, expr);
             }
