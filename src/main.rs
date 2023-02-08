@@ -48,10 +48,11 @@ fn main() -> miette::Result<()> {
             println!("Parse success! Converting to IR...");
 
             let ir = to_ir_vec(&path, &parsed).map_err(|e| {
-                let parse_file = file.clone();
+                let span = e.get_span();
+                let file = fs::read_to_string(span.source_path).expect("file does not exist");
                 ErrReport::from(PrettyParseError {
-                    src: NamedSource::new(path.clone(), parse_file),
-                    error_loc: (e.get_span().start..e.get_span().start + 1).into(),
+                    src: NamedSource::new(span.source_path, file),
+                    error_loc: (span.start..span.start + 1).into(),
                     expected: e.message().into(),
                 })
             })?;
