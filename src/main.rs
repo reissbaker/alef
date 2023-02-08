@@ -50,8 +50,16 @@ fn main() -> miette::Result<()> {
                 println!("\n{}: {:?}", pos + 1, expr);
             }
 
-            let ir = to_ir_vec(&path, &parsed);
-            println!("IR convert success!\nIR:");
+            let ir = to_ir_vec(&path, &parsed).map_err(|e| {
+                let parse_file = file.clone();
+                ErrReport::from(PrettyParseError {
+                    src: NamedSource::new(path.clone(), parse_file),
+                    error_loc: (e.get_span().start..e.get_span().start + 1).into(),
+                    expected: e.message().into(),
+                })
+            })?;
+
+            println!("\nIR convert success!\nIR:");
             for (pos, expr) in ir.iter().enumerate() {
                 println!("\n{}: {:?}", pos + 1, expr);
             }

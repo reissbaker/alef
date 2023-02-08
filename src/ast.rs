@@ -37,6 +37,22 @@ pub enum Ast<'a> {
     Float(AstSpan, f64),
 }
 
+impl<'a> Ast<'a> {
+    pub fn get_span(&self) -> &AstSpan {
+        match self {
+            Ast::Macro(span, _) => span,
+            Ast::Call(span, _) => span,
+            Ast::Dict(span, _) => span,
+            Ast::List(span, _) => span,
+            Ast::TypeAssert(span, _, _) => span,
+            Ast::Identifier(span, _) => span,
+            Ast::Field(span, _) => span,
+            Ast::Int(span, _) => span,
+            Ast::Float(span, _) => span,
+        }
+    }
+}
+
 impl<'a> std::fmt::Debug for Ast<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
