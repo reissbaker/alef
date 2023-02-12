@@ -9,6 +9,7 @@ pub type IrResult<'a, T> = Result<T, IrError<'a>>;
 pub enum IrError<'a> {
     ArgumentError(IrSpan<'a>, &'static str),
     SyntaxError(IrSpan<'a>, &'static str),
+    ReferenceError(IrSpan<'a>, &'static str),
     Unimplemented(IrSpan<'a>),
 }
 impl<'a> IrError<'a> {
@@ -17,12 +18,14 @@ impl<'a> IrError<'a> {
             IrError::ArgumentError(span, _) => *span,
             IrError::SyntaxError(span, _) => *span,
             IrError::Unimplemented(span) => *span,
+            IrError::ReferenceError(span, _) => *span,
         }
     }
     pub fn message(&self) -> &'static str {
         match self {
             IrError::ArgumentError(_, msg) => *msg,
             IrError::SyntaxError(_, msg) => *msg,
+            IrError::ReferenceError(_, msg) => *msg,
             IrError::Unimplemented(_) => "Unimplemented",
         }
     }
@@ -115,64 +118,58 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
                 return Ok(Ir::Dict(IrSpan::from_ast_span(source_path, span), vec![]));
             }
             let mut args_iter = args.iter();
-
-            match args_iter.next().unwrap() {
-                Ast::Identifier(_, macro_name) => {
-                    match *macro_name {
-                        "let" => parse_let(source_path, span, args_iter),
-                        "set" => parse_set(source_path, span, args_iter),
-                        "def" => {
-                            match args_iter.next().unwrap() {
-                                Ast::Identifier(id_span, id_str) => {
-                                    match args_iter.next().unwrap() {
-                                        Ast::List(_, items) => {
-                                            let arglist = to_ir_arglist(source_path, items);
-                                            Ok(Ir::Let(
-                                                IrSpan::from_ast_span(source_path, span),
-                                                parse_id(source_path, id_span, id_str),
-                                                Box::new(
-                                                    Ir::Lambda(
-                                                        IrSpan::from_ast_span(source_path, span),
-                                                        arglist,
-                                                        iter_to_ir_vec(source_path, args_iter)?
-                                                    )
-                                                )
-                                            ))
-                                        }
-                                        _ => {
-                                            panic!("Third arg of def must be a list");
-                                        }
-                                    }
-                                }
-                                _ => {
-                                    panic!("Second arg of let must be an ID");
-                                }
-                            }
-                        }
-
-                        "->" => {
-                            match args_iter.next().unwrap() {
-                                Ast::List(_, items) => {
-                                    let arglist = to_ir_arglist(source_path, items);
-                                    Ok(Ir::Lambda(
-                                        IrSpan::from_ast_span(source_path, span),
-                                        arglist,
-                                        iter_to_ir_vec(source_path, args_iter)?
-                                    ))
-                                }
-                                _ => {
-                                    panic!("Next arg of a lambda must be a list");
-                                }
-                            }
-                        }
-
-                        default => {
-                            panic!("unknown macro {}", default);
-                        }
-                    }
+            let (macro_name_span, macro_name) = expect_id(
+                source_path,
+                args_iter.next(),
+                span
+            )?;
+            match macro_name {
+                "let" => parse_let(source_path, span, args_iter),
+                "set" => parse_set(source_path, span, args_iter),
+                "def" => {
+                    let (name_span, name_str) = expect_id(
+                        source_path,
+                        args_iter.next(),
+                        macro_name_span,
+                    )?;
+                    let (_, items) = expect_list(
+                        source_path,
+                        args_iter.next(),
+                        name_span,
+                    )?;
+                    let arglist = to_ir_arglist(source_path, items);
+                    Ok(Ir::Let(
+                        IrSpan::from_ast_span(source_path, span),
+                        parse_id(source_path, macro_name_span, name_str),
+                        Box::new(
+                            Ir::Lambda(
+                                IrSpan::from_ast_span(source_path, span),
+                                arglist,
+                                iter_to_ir_vec(source_path, args_iter)?
+                            )
+                        )
+                    ))
                 }
+
+                "->" => {
+                    let (_, items) = expect_list(
+                        source_path,
+                        args_iter.next(),
+                        macro_name_span,
+                    )?;
+                    let arglist = to_ir_arglist(source_path, items);
+                    Ok(Ir::Lambda(
+                        IrSpan::from_ast_span(source_path, span),
+                        arglist,
+                        iter_to_ir_vec(source_path, args_iter)?
+                    ))
+                }
+
                 _ => {
-                    panic!("unexpanded macro");
+                    Err(IrError::ReferenceError(
+                        IrSpan::from_ast_span(source_path, macro_name_span),
+                        "Unknown macro name"
+                    ))
                 }
             }
         }
@@ -211,6 +208,70 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
         }
         Ast::Float(span, val) => {
             Ok(Ir::Float(IrSpan::from_ast_span(source_path, span), *val))
+        }
+    }
+}
+
+fn expect_ast<'a, 'b, 'c>(
+    source_path: &'a str,
+    maybe_ast: Option<&'b Ast<'c>>,
+    prev_span: &AstSpan,
+    err_msg: &'static str,
+) -> IrResult<'a, &'b Ast<'c>> {
+    maybe_ast.ok_or_else(|| {
+        // Make sure the error actually points to after the prev parsed expr!
+        let end_span = AstSpan {
+            start: prev_span.end,
+            // We're guaranteed that this isn't an index-out-of-bounds exception, since if
+            // it parsed this far, by definition there's a closing token for the group
+            // expression
+            end: prev_span.end + 1,
+        };
+        IrError::ArgumentError(
+            IrSpan::from_ast_span(source_path, &end_span),
+            err_msg
+        )
+    })
+}
+fn expect_list<'a, 'b, 'c>(
+    source_path: &'a str,
+    maybe_ast: Option<&'b Ast<'c>>,
+    prev_span: &AstSpan
+) -> IrResult<'a, (&'b AstSpan, &'b Vec<Ast<'c>>)> {
+    let ast = expect_ast(
+        source_path,
+        maybe_ast,
+        prev_span,
+        "Expected a list"
+    )?;
+    match ast {
+        Ast::List(span, items) => Ok((span, items)),
+        ast => {
+            Err(IrError::ArgumentError(
+                IrSpan::from_ast_span(source_path, ast.get_span()),
+                "Expected a list"
+            ))
+        }
+    }
+}
+fn expect_id<'a, 'b, 'c>(
+    source_path: &'a str,
+    maybe_ast: Option<&'b Ast<'c>>,
+    prev_span: &AstSpan
+) -> IrResult<'a, (&'b AstSpan, &'c str)> {
+    let ast = expect_ast(
+        source_path,
+        maybe_ast,
+        prev_span,
+        "Expected an ID"
+    )?;
+    match ast {
+        Ast::Identifier(span, name) => Ok((span, *name)),
+        ast => {
+            Err(IrError::ArgumentError(
+                IrSpan::from_ast_span(source_path, ast.get_span()),
+                "Expected an ID"
+            ))
         }
     }
 }
@@ -290,21 +351,12 @@ fn parse_set<'a, 'b>(source_path: &'a str, span: &AstSpan, args_iter: Iter<Ast<'
 fn parse_let_set_args<'a, 'b>(source_path: &'a str, mut args_iter: Iter<Ast<'b>>) -> IrResult<'a, (Id<'a>, Box<Ir<'a>>)> {
     match args_iter.next().unwrap() {
         Ast::Identifier(id_span, id_str) => {
-            let value = args_iter.next().ok_or_else(|| {
-                // Make sure the error actually points to after the second argument! The second arg
-                // isn't the problem, it's the fact that there isn't a third arg
-                let end_span = AstSpan {
-                    start: id_span.end,
-                    // We're guaranteed that this isn't an index-out-of-bounds exception, since if
-                    // it parsed this far, by definition there's a closing brace for the let
-                    // expression
-                    end: id_span.end + 1,
-                };
-                IrError::ArgumentError(
-                    IrSpan::from_ast_span(source_path, &end_span),
-                    "Expected a third argument, but only two were passed"
-                )
-            })?;
+            let value = expect_ast(
+                source_path,
+                args_iter.next(),
+                id_span,
+                "Expected a third argument, but only two were passed"
+            )?;
 
             let mut peekable = args_iter.peekable();
             match peekable.peek() {
