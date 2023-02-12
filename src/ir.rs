@@ -191,8 +191,11 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
                 to_ir_pairs(source_path, dict_pairs)?
             ))
         }
-        Ast::List(span, _items) => {
-            Err(IrError::Unimplemented(IrSpan::from_ast_span(source_path, span)))
+        Ast::List(span, items) => {
+            Ok(Ir::List(
+                IrSpan::from_ast_span(source_path, span),
+                to_ir_vec(source_path, items)?
+            ))
         }
         Ast::TypeAssert(span, _type_ast, _id_str) => {
             Err(IrError::Unimplemented(IrSpan::from_ast_span(source_path, span)))
