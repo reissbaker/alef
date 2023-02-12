@@ -174,9 +174,11 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
             }
         }
         Ast::Call(span, args) => {
+            // Empty calls syntactically refer to nil, like Rust and Scheme
             if args.len() == 0 {
                 return Ok(Ir::Nil(IrSpan::from_ast_span(source_path, span)));
             }
+            // Otherwise, parse the call!
             let mut ir_args = to_ir_vec(source_path, args)?;
             let head = ir_args.remove(0);
 
@@ -201,6 +203,8 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
             Ok(Ir::Id(parse_id(source_path, span, id_str)))
         }
         Ast::Field(span, _) => {
+            // If we got a field access here, there was no preceding expr to combine it with (or
+            // else the vec version of this call would've stripped it out). Error.
             Err(unexpected_field_access(source_path, span))
         }
         Ast::Int(span, val) => {
