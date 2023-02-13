@@ -1,0 +1,18 @@
+{type higher_kinded {generic [T]}}
+
+{type fn_type {=> [_ _] bool}}
+
+{type generic_fn_type {where [T] {=> [T] T}}}
+
+{type using_hkt_fn {where [<higher_kinded F> <any T>]
+  {=> [T] (F T)}
+}}
+
+{where [T]
+  {struct Vec [
+    <(Array ((Array T) items)>
+    {readable <usize capacity>}
+  ]}
+}
+
+{type IntVec (Vec int)}
