@@ -593,9 +593,10 @@ fn alphanumeric<'a>() -> impl Parser<'a, char> {
     })
 }
 
-fn alphanumeric_or_underscore_str<'a>() -> impl Parser<'a, &'a str> {
+// Allows alphanumeric characters, underscores, and dashes
+fn id_rest_str<'a>() -> impl Parser<'a, &'a str> {
     take_while(ParseError::Kind(ErrorKinds::Alphanumeric), |byte| {
-        byte.is_ascii_alphanumeric() || byte == 95
+        byte.is_ascii_alphanumeric() || byte == 95 || byte == 45
     })
 }
 
@@ -630,7 +631,7 @@ fn number<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> 
 fn id_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a str> {
     seq!(
         alphabetic(),
-        alphanumeric_or_underscore_str().opt(),
+        id_rest_str().opt(),
         ascii('?').opt(),
     ).peek(trailing_values).map_span(|span| {
         span.as_str()
