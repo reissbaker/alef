@@ -1,11 +1,24 @@
-{type higher_kinded {generic [T]}}
+{type higher-kinded {generic [T]}}
 
-{type fn_type {=> [_ _] bool}}
+{type fn-type {=> [_ _] bool}}
 
-{type generic_fn_type {where [T] {=> [T] T}}}
+{type generic-fn-type {where [T] {=> [T] T}}}
 
-{type using_hkt_fn {where [<higher_kinded F> <any T>]
+{type using-hkt-fn {where [<higher-kinded F> <any T>]
   {=> [T] (F T)}
+}}
+
+{type hello-or-foo {|
+  "hello"
+  "foo"
+}}
+
+{type conditional-literal-type {-> [<hello-or-foo T>]
+  {case
+    {when (== T "hello") "world"}
+    {when (== T "foo") "bar"}
+    {else never}
+  }
 }}
 
 {where [T]
