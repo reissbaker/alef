@@ -1,3 +1,4 @@
+## Parsing
 You need better trace visibility for debugging. Rather than functions being
 parsers, have parser builders that take some debuggable thing to print in the
 tracer along with the function.
@@ -16,6 +17,55 @@ pointer to one around everywhere. We can keep the span methods the same, and
 instead just have them all take a ctx param that is expected to include the
 input string. UPDATE: nope this actually was slower! No idea why.
 
+## Syntax + semantics
+Dot-access should actually only be for fields -- trait functions should use a
+colon, like Lua. That way you resolve awkward ambiguities around a lambda field
+vs a trait function: the lambda field is accessed via `.`, whereas the trait
+function is accessed via the `:` (which resolves awkward ambiguities for type
+inference where there are objects in your codebase that have a field name
+that's the same as a trait function name, which without distinction would force
+all modules aware of those objects to disambiguate between field access and
+trait invocation). But that change would make dictionary syntax potentially
+ambiguous: does `{ a: b }` mean you're making a dictionary with a key of `a`
+set to the value `b`, or does it mean you're invoking macro `b` on argument
+`a`? Yes, if `b` *isn't* a macro, the result isn't ambiguous (it's obviously
+not a macro invocation!), but if `b` is a macro, it might be valid to put a
+macro into a dictionary; after all, we want to support things like runtime
+printing a macro, so a macro should be able to get set to a value -- and thus it
+should be able to be placed in a dictionary. To resolve this ambiguity, use
+`:=` as the separator between keys and values in dicts: we don't allow an `=`
+operator, so `:=` is unambiguously a special separator.
+
+In fact! To make things even more homoiconic, you could have the dict syntax
+rewrite itself to something like:
+
+```
+{dict
+  {= a b}
+}
+```
+
+And so `:=` actually is a nearly-valid trait macro invocation! (Technically
+it's still syntax sugar and invalid-as-regular-code, since there isn't a
+containing `{}` around the set.) Could you change that? E.g. is this actually
+bad?
+
+```
+{dict
+  {a := b}
+  {test := "hello"}
+}
+```
+
+Actually I think this is great. It means changing from a struct to a dict is
+simple: just change the macro getting invoked to `make`. Makes named args for
+functions transparently supported too: just pass a struct!
+
+Any function or macro defined in a file should actually be considered to be
+defined on that file's trait. Thus `:` always has the same semantics, whether
+it's on explicit traits or on the file's trait.
+
+## Comptime
 It would be neat to be super-comptime-aware like Zig. Typechecker should detect
 if a function is pure, and if it is, it should pre-compute returns for any
 invocation of the function with static inputs. And if there are closures used
