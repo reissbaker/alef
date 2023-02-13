@@ -63,11 +63,25 @@ pub enum LambdaArg<'a> {
 pub type ArgList<'a> = Vec<LambdaArg<'a>>;
 
 #[derive(Debug)]
+pub struct When<'a> {
+    pub span: IrSpan<'a>,
+    pub condition: Ir<'a>,
+    pub body: Vec<Ir<'a>>,
+}
+
+#[derive(Debug)]
+pub struct Else<'a> {
+    pub span: IrSpan<'a>,
+    pub body: Vec<Ir<'a>>,
+}
+
+#[derive(Debug)]
 pub enum Ir<'a> {
     Let(IrSpan<'a>, Id<'a>, Box<Ir<'a>>),
     Set(IrSpan<'a>, Id<'a>, Box<Ir<'a>>),
     Lambda(IrSpan<'a>, ArgList<'a>, Vec<Ir<'a>>),
     Call(IrSpan<'a>, Box<Ir<'a>>, Vec<Ir<'a>>),
+    Case(IrSpan<'a>, Vec<When<'a>>, Option<Box<Else<'a>>>),
     Dict(IrSpan<'a>, DictPairs<'a>),
     List(IrSpan<'a>, Vec<Ir<'a>>),
     TypeAssert(IrSpan<'a>, TypeAssert<'a>),
@@ -128,6 +142,13 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
                 "set" => parse_set(source_path, span, args_iter),
                 "def" => parse_def(source_path, span, macro_name_span, args_iter),
                 "=>" => parse_lambda(source_path, span, macro_name_span, args_iter),
+                "case" => parse_case(source_path, span, macro_name_span, args_iter),
+                "when" | "else" => {
+                    Err(IrError::ReferenceError(
+                        IrSpan::from_ast_span(source_path, macro_name_span),
+                        "`when` and `else` clauses must be directly enclosed by a `case` call"
+                    ))
+                }
                 _ => {
                     Err(IrError::ReferenceError(
                         IrSpan::from_ast_span(source_path, macro_name_span),
@@ -241,6 +262,101 @@ fn expect_id<'a, 'b, 'c>(
             ))
         }
     }
+}
+fn expect_when<'a, 'b, 'c>(
+    source_path: &'a str,
+    maybe_ast: Option<&'b Ast<'c>>,
+    prev_span: &AstSpan
+) -> IrResult<'a, (&'b AstSpan, When<'a>)> {
+    let ast = expect_ast(
+        source_path,
+        maybe_ast,
+        prev_span,
+        "Expected a when clause"
+    )?;
+    match ast {
+        Ast::Macro(macro_span, args) => {
+            let mut macro_args_iter = args.iter();
+            match macro_args_iter.next() {
+                Some(Ast::Identifier(span, name)) => {
+                    match *name {
+                        "when" => {
+                            let condition = ast_to_ir(source_path, expect_ast(
+                                source_path,
+                                macro_args_iter.next(),
+                                span,
+                                "Expected a condition for the `when` clause"
+                            )?)?;
+                            let body = iter_to_ir_vec(source_path, macro_args_iter)?;
+                            return Ok((macro_span, When {
+                                span: IrSpan::from_ast_span(source_path, macro_span),
+                                condition, body,
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+                Some(other_ast) => {
+                    return Err(IrError::ArgumentError(
+                        IrSpan::from_ast_span(source_path, other_ast.get_span()),
+                        "Expected a when clause"
+                    ));
+                }
+                None => {}
+            }
+        }
+        _ => {}
+    }
+
+    Err(IrError::ArgumentError(
+        IrSpan::from_ast_span(source_path, ast.get_span()),
+        "Expected a when clause"
+    ))
+}
+
+fn expect_else<'a, 'b, 'c>(
+    source_path: &'a str,
+    maybe_ast: Option<&'b Ast<'c>>,
+    prev_span: &AstSpan
+) -> IrResult<'a, (&'b AstSpan, Else<'a>)> {
+    let ast = expect_ast(
+        source_path,
+        maybe_ast,
+        prev_span,
+        "Expected an else clause"
+    )?;
+    match ast {
+        Ast::Macro(macro_span, args) => {
+            let mut macro_args_iter = args.iter();
+            match macro_args_iter.next() {
+                Some(Ast::Identifier(_, name)) => {
+                    match *name {
+                        "else" => {
+                            let body = iter_to_ir_vec(source_path, macro_args_iter)?;
+                            return Ok((macro_span, Else {
+                                span: IrSpan::from_ast_span(source_path, macro_span),
+                                body,
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+                Some(other_ast) => {
+                    return Err(IrError::ArgumentError(
+                        IrSpan::from_ast_span(source_path, other_ast.get_span()),
+                        "Expected an else clause"
+                    ));
+                }
+                None => {}
+            }
+        }
+        _ => {}
+    }
+
+    Err(IrError::ArgumentError(
+        IrSpan::from_ast_span(source_path, ast.get_span()),
+        "Expected an else clause"
+    ))
 }
 
 fn unexpected_field_access<'a>(source_path: &'a str, span: &AstSpan) -> IrError<'a> {
@@ -397,5 +513,48 @@ fn parse_lambda<'a, 'b>(
         IrSpan::from_ast_span(source_path, macro_span),
         arglist,
         iter_to_ir_vec(source_path, args_iter)?
+    ))
+}
+
+fn parse_case<'a, 'b>(
+    source_path: &'a str,
+    macro_span: &AstSpan,
+    macro_name_span: &AstSpan,
+    mut args_iter: Iter<Ast<'b>>
+) -> IrResult<'a, Ir<'a>> {
+    let (mut prev_span, clause) = expect_when(
+        source_path,
+        args_iter.next(),
+        macro_name_span,
+    )?;
+
+    let mut whens = vec![ clause ];
+    let mut else_clause = None;
+
+    while let Some(ast) = args_iter.next() {
+        if else_clause.is_some() {
+            return Err(IrError::ArgumentError(
+                IrSpan::from_ast_span(source_path, ast.get_span()),
+                "This `case` statement already has an else; additional arguments after an `else` are unsupported"
+            ));
+        }
+
+        match expect_when(source_path, Some(ast), prev_span) {
+            Ok((span, when)) => {
+                prev_span = span;
+                whens.push(when);
+            }
+            Err(_) => {
+                let (span, parsed_else) = expect_else(source_path, Some(ast), prev_span)?;
+                else_clause = Some(Box::new(parsed_else));
+                prev_span = span;
+            }
+        }
+    }
+
+    Ok(Ir::Case(
+        IrSpan::from_ast_span(source_path, macro_span),
+        whens,
+        else_clause,
     ))
 }

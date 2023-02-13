@@ -21,3 +21,10 @@
 }
 
 (1.+ 2)
+
+{def max [a b]
+  {case
+    {when (a.< b) b}
+    {else a}
+  }
+}
