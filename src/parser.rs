@@ -838,7 +838,7 @@ fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a
         ascii_str("|"),
         ascii_str("++"),
         ascii_str("+"),
-        ascii_str("->"),
+        ascii_str("=>"),
         ascii_str("--"),
         ascii_str("-="),
         ascii_str("-"),

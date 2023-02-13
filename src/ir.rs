@@ -126,45 +126,8 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
             match macro_name {
                 "let" => parse_let(source_path, span, args_iter),
                 "set" => parse_set(source_path, span, args_iter),
-                "def" => {
-                    let (name_span, name_str) = expect_id(
-                        source_path,
-                        args_iter.next(),
-                        macro_name_span,
-                    )?;
-                    let (_, items) = expect_list(
-                        source_path,
-                        args_iter.next(),
-                        name_span,
-                    )?;
-                    let arglist = to_ir_arglist(source_path, items);
-                    Ok(Ir::Let(
-                        IrSpan::from_ast_span(source_path, span),
-                        parse_id(source_path, macro_name_span, name_str),
-                        Box::new(
-                            Ir::Lambda(
-                                IrSpan::from_ast_span(source_path, span),
-                                arglist,
-                                iter_to_ir_vec(source_path, args_iter)?
-                            )
-                        )
-                    ))
-                }
-
-                "->" => {
-                    let (_, items) = expect_list(
-                        source_path,
-                        args_iter.next(),
-                        macro_name_span,
-                    )?;
-                    let arglist = to_ir_arglist(source_path, items);
-                    Ok(Ir::Lambda(
-                        IrSpan::from_ast_span(source_path, span),
-                        arglist,
-                        iter_to_ir_vec(source_path, args_iter)?
-                    ))
-                }
-
+                "def" => parse_def(source_path, span, macro_name_span, args_iter),
+                "=>" => parse_lambda(source_path, span, macro_name_span, args_iter),
                 _ => {
                     Err(IrError::ReferenceError(
                         IrSpan::from_ast_span(source_path, macro_name_span),
@@ -385,4 +348,54 @@ fn parse_let_set_args<'a, 'b>(source_path: &'a str, mut args_iter: Iter<Ast<'b>>
             ))
         }
     }
+}
+
+fn parse_def<'a, 'b>(
+    source_path: &'a str,
+    macro_span: &AstSpan,
+    macro_name_span: &AstSpan,
+    mut args_iter: Iter<Ast<'b>>
+) -> IrResult<'a, Ir<'a>> {
+    let (name_span, name_str) = expect_id(
+        source_path,
+        args_iter.next(),
+        macro_name_span,
+    )?;
+    let (_, items) = expect_list(
+        source_path,
+        args_iter.next(),
+        name_span,
+    )?;
+    let arglist = to_ir_arglist(source_path, items);
+    Ok(Ir::Let(
+        IrSpan::from_ast_span(source_path, macro_span),
+        parse_id(source_path, macro_name_span, name_str),
+        Box::new(
+            Ir::Lambda(
+                IrSpan::from_ast_span(source_path, macro_span),
+                arglist,
+                iter_to_ir_vec(source_path, args_iter)?
+            )
+        )
+    ))
+}
+
+fn parse_lambda<'a, 'b>(
+    source_path: &'a str,
+    macro_span: &AstSpan,
+    macro_name_span: &AstSpan,
+    mut args_iter: Iter<Ast<'b>>
+) -> IrResult<'a, Ir<'a>> {
+    let (_, items) = expect_list(
+        source_path,
+        args_iter.next(),
+        macro_name_span,
+    )?;
+    let arglist = to_ir_arglist(source_path, items);
+
+    Ok(Ir::Lambda(
+        IrSpan::from_ast_span(source_path, macro_span),
+        arglist,
+        iter_to_ir_vec(source_path, args_iter)?
+    ))
 }

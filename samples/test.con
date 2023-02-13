@@ -10,7 +10,7 @@
   c: 3.1
 }}
 
-{let callback {-> [<int a>]
+{let callback {=> [<int a>]
   (println a)
 }}
 
