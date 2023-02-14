@@ -860,6 +860,7 @@ fn operator_str<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, &'a
         ascii_str("%"),
         ascii_str("=="),
         ascii_str("!="),
+        ascii_str("="),
         ascii_str("!"),
         ascii_str(">="),
         ascii_str(">"),
@@ -878,9 +879,9 @@ fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     choose!(
         number,
         call,
+        dict,
         macro_call,
         id,
-        dict,
         list,
         typelist,
         operator,
