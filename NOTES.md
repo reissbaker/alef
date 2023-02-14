@@ -65,6 +65,16 @@ Any function or macro defined in a file should actually be considered to be
 defined on that file's trait. Thus `:` always has the same semantics, whether
 it's on explicit traits or on the file's trait.
 
+Refactor steps:
+
+- [x] Make the `:=` sequence the separator for dicts
+- [x] Add support for `:` trait references
+- [ ] Add the `=` operator
+- [ ] Add the `dict` macro in the IR parser to generate dicts using ordinary
+  macro syntax
+- [ ] Remove special-cased dict parsing from the first-pass AST parser, and
+  remove the wrapper for it from the IR parser
+
 ## Comptime
 It would be neat to be super-comptime-aware like Zig. Typechecker should detect
 if a function is pure, and if it is, it should pre-compute returns for any

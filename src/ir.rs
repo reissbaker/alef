@@ -87,6 +87,7 @@ pub enum Ir<'a> {
     TypeAssert(IrSpan<'a>, TypeAssert<'a>),
     Id(Id<'a>),
     FieldAccess(Box<Ir<'a>>, Id<'a>),
+    TraitRef(IrSpan<'a>, Box<Ir<'a>>, Id<'a>),
     Int(IrSpan<'a>, i64),
     Float(IrSpan<'a>, f64),
     Nil(IrSpan<'a>),
@@ -98,9 +99,13 @@ pub fn to_ir_vec<'a, 'b>(source_path: &'a str, ast_vec: &Vec<Ast<'b>>) -> IrResu
 
 fn iter_to_ir_vec<'a, 'b>(source_path: &'a str, ast_iter: std::slice::Iter<'b, Ast<'b>>) -> IrResult<'a, Vec<Ir<'a>>> {
     let mut coalesced = vec![];
+    let mut last_ast_span;
 
     for ast in ast_iter {
+        last_ast_span = ast.get_span();
         match ast {
+            // TODO: these are essentially the same, and where they differ, Ir::FieldAccess is
+            // worse, so you should just combine these into a parsing fn that works for either
             Ast::Field(span, id_str) => {
                 let last = coalesced.pop();
                 match last {
@@ -112,6 +117,26 @@ fn iter_to_ir_vec<'a, 'b>(source_path: &'a str, ast_iter: std::slice::Iter<'b, A
                             Box::new(last),
                             (IrSpan::from_ast_span(source_path, &span), (*id_str).into())
                         ));
+                    }
+                }
+            }
+            Ast::TraitRef(span, id_str) => {
+                let last = coalesced.pop();
+                match last {
+                    None => {
+                        return Err(unexpected_trait_ref(source_path, span));
+                    }
+                    Some(last) => {
+                        let full_span = IrSpan {
+                            source_path,
+                            start: last_ast_span.start,
+                            end: span.end,
+                        };
+                        coalesced.push(Ir::TraitRef(
+                            full_span,
+                            Box::new(last),
+                            (IrSpan::from_ast_span(source_path, &span), (*id_str).into()),
+                        ))
                     }
                 }
             }
@@ -182,6 +207,11 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
         }
         Ast::TypeAssert(span, _type_ast, _id_str) => {
             Err(IrError::Unimplemented(IrSpan::from_ast_span(source_path, span)))
+        }
+        Ast::TraitRef(span, _id_str) => {
+            // If we got a trait reference here, there was no preceding expr to combine it with (or
+            // else the vec version of this call would've stripped it out). Error.
+            Err(unexpected_trait_ref(source_path, span))
         }
         Ast::Identifier(span, id_str) => {
             Ok(Ir::Id(parse_id(source_path, span, id_str)))
@@ -363,6 +393,12 @@ fn unexpected_field_access<'a>(source_path: &'a str, span: &AstSpan) -> IrError<
     IrError::SyntaxError(
         IrSpan::from_ast_span(source_path, span),
         "Unexpected field access: no preceding expression"
+    )
+}
+fn unexpected_trait_ref<'a>(source_path: &'a str, span: &AstSpan) -> IrError<'a> {
+    IrError::SyntaxError(
+        IrSpan::from_ast_span(source_path, span),
+        "Unexpected trait reference: no preceding expression"
     )
 }
 

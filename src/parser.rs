@@ -647,8 +647,19 @@ fn field<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     seq!(
         ascii('.'),
         choose!(id_str, operator_str),
-    ).map_span(|span| { let dotless = span.slice(1, span.len());
+    ).map_span(|span| {
+        let dotless = span.slice(1, span.len());
         Ast::Field(span.into(), dotless.as_str())
+    }).parse(input, ctx)
+}
+
+fn trait_ref<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
+    seq!(
+        ascii(':'),
+        choose!(id_str, operator_str),
+    ).map_span(|span| {
+        let colonless = span.slice(1, span.len());
+        Ast::TraitRef(span.into(), colonless.as_str())
     }).parse(input, ctx)
 }
 
@@ -822,7 +833,7 @@ fn pair<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, ((AstSpan, 
             (span.into(), output)
         }),
         ignore_whitespace(),
-        ascii(':'),
+        ascii_str(":="),
         ignore_whitespace(),
         expr,
     ).map(|output, _| {
@@ -874,6 +885,7 @@ fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
         typelist,
         operator,
         field,
+        trait_ref,
     ).parse(input, ctx)
 }
 

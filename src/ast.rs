@@ -33,6 +33,7 @@ pub enum Ast<'a> {
     TypeAssert(AstSpan, Box<Ast<'a>>, &'a str),
     Identifier(AstSpan, &'a str),
     Field(AstSpan, &'a str),
+    TraitRef(AstSpan, &'a str),
     Int(AstSpan, i64),
     Float(AstSpan, f64),
 }
@@ -47,6 +48,7 @@ impl<'a> Ast<'a> {
             Ast::TypeAssert(span, _, _) => span,
             Ast::Identifier(span, _) => span,
             Ast::Field(span, _) => span,
+            Ast::TraitRef(span, _) => span,
             Ast::Int(span, _) => span,
             Ast::Float(span, _) => span,
         }
@@ -87,6 +89,9 @@ impl<'a> std::fmt::Debug for Ast<'a> {
             }
             Ast::Field(span, name) => {
                 write!(f, "Field({}-{}, {:?})", span.start, span.end, name)?;
+            }
+            Ast::TraitRef(span, name) => {
+                write!(f, "TraitRef({}-{}, {:?})", span.start, span.end, name)?;
             }
         }
         Ok(())
