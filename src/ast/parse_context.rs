@@ -1,5 +1,5 @@
-use crate::trace::{Trace, Tracer, Tracers};
-use crate::span::Span;
+use crate::ast::trace::{Trace, Tracer, Tracers};
+use crate::ast::span::Span;
 
 pub struct ParseContext {
     pub collect_errors: bool,

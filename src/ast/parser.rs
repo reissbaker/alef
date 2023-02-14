@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 use std::fmt::Debug;
-use crate::span::Span;
-use crate::trace::{Trace, Tracers};
-use crate::errors::{ErrorPicker, ParseError};
-use crate::ast::{Ast, AstSpan};
-use crate::parse_context::ParseContext;
+use crate::ast::span::Span;
+use crate::ast::trace::{Trace, Tracers};
+use crate::ast::errors::{ErrorPicker, ParseError};
+use crate::ast::ast::{Ast, AstSpan};
+use crate::ast::parse_context::ParseContext;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ErrorKinds {

@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use crate::span::Span;
+use crate::ast::span::Span;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Trace {

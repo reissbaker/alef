@@ -1,9 +1,10 @@
 use core::slice::Iter;
 use crate::ast;
-use crate::ast::{Ast, AstSpan};
+use crate::ast::ast::{Ast, AstSpan};
 
 pub type Id<'a> = (IrSpan<'a>, String);
-pub type DictPairs<'a> = Vec<(Id<'a>, Ir<'a>)>;
+pub type DictPair<'a> = (Id<'a>, Ir<'a>);
+pub type DictPairs<'a> = Vec<DictPair<'a>>;
 pub type IrResult<'a, T> = Result<T, IrError<'a>>;
 
 pub enum IrError<'a> {
@@ -434,7 +435,7 @@ fn to_ir_arglist<'a, 'b>(source_path: &'a str, list: &Vec<Ast<'b>>) -> ArgList<'
         }
     }).collect()
 }
-fn to_ir_pairs<'a, 'b>(source_path: &'a str, pairs: &ast::DictPairs<'b>) -> IrResult<'a, DictPairs<'a>> {
+fn to_ir_pairs<'a, 'b>(source_path: &'a str, pairs: &ast::ast::DictPairs<'b>) -> IrResult<'a, DictPairs<'a>> {
     let mut vec = vec![];
     for ((span, id_str), ast) in pairs.iter() {
         vec.push((

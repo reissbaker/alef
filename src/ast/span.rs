@@ -1,6 +1,6 @@
 use std::fmt::Debug;
-use crate::trace::{Trace, Tracer};
-use crate::parse_context::ParseContext;
+use crate::ast::trace::{Trace, Tracer};
+use crate::ast::parse_context::ParseContext;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Span<'a> {

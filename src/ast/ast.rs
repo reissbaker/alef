@@ -1,4 +1,4 @@
-use crate::span::Span;
+use crate::ast::span::Span;
 
 #[derive(Debug, Copy, Clone)]
 pub struct AstSpan {

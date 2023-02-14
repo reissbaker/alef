@@ -1,16 +1,11 @@
-mod span;
-mod errors;
 mod ast;
-mod parser;
 mod macros;
 mod ir;
-mod parse_context;
-mod trace;
 
 use std::fs;
 use miette::{NamedSource, Diagnostic, SourceSpan, ErrReport};
-use parser::parse;
-use errors::format_error;
+use ast::parser::parse;
+use ast::errors::format_error;
 use ir::to_ir_vec;
 use thiserror::Error;
 
