@@ -10,7 +10,7 @@
   {c := 3.1}
 }}
 
-{let callback {=> [<int a>]
+{let callback {[<int a>] :=>
   (println a)
 }}
 
@@ -20,11 +20,11 @@
   (!= (len list) 0)
 }
 
-(1:+ 2)
+(1 :+ 2)
 
 {def max [a b]
   {case
-    {when (a:< b) b}
+    {when (a :< b) b}
     {else a}
   }
 }
