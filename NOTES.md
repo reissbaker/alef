@@ -65,6 +65,45 @@ Any function or macro defined in a file should actually be considered to be
 defined on that file's trait. Thus `:` always has the same semantics, whether
 it's on explicit traits or on the file's trait.
 
+Okay, what's awk about this still is... It's using strings, which feels pretty
+inefficient. E.g. you'd need `{some_dict:get "test"}`. Sure, with constant
+folding that may not be too bad, but an easier path to efficiency would be to
+use Ruby-like (or Clojure-like) symbols. The `:` character is already reserved
+for function application, but how about `$`? It even sort of looks like an `S`.
+Example code:
+
+```
+{let b "world"}
+
+{dict
+  {$a := b}
+  {$test := "hello"}
+}
+
+(println (dict:get $test))
+(println (dict:get $a))
+```
+
+Okay, I don't love this in terms of making dict and struct syntax equivalent. I
+think probably the key of a k/v pair should be an identifier, but you can
+access it later via a symbol (whereas in JS, it would be accessed by a string).
+So:
+
+```
+{let b "world"}
+
+{dict
+  {a := b}
+  {test := "hello"}
+}
+
+(println (dict:get $test))
+(println (dict:get $a))
+```
+
+In the long run, metaprogramming stuff like reflecting on the keys of a struct
+should happen via symbols as well, to keep the syntactic equivalence.
+
 Refactor steps:
 
 - [x] Make the `:=` sequence the separator for dicts
@@ -74,6 +113,7 @@ Refactor steps:
   macro syntax
 - [x] Remove special-cased dict parsing from the first-pass AST parser, and
   remove the wrapper for it from the IR parser
+- [ ] Add symbol parsing
 
 ## Comptime
 It would be neat to be super-comptime-aware like Zig. Typechecker should detect
