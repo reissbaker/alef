@@ -5,9 +5,9 @@
 
 (boot 3)
 
-{let table {
-  b := 2
-  c := 3.1
+{let table {dict
+  {b := 2}
+  {c := 3.1}
 }}
 
 {let callback {=> [<int a>]

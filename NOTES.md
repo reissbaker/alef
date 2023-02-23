@@ -70,9 +70,9 @@ Refactor steps:
 - [x] Make the `:=` sequence the separator for dicts
 - [x] Add support for `:` trait references
 - [x] Add the `=` operator
-- [ ] Add the `dict` macro in the IR parser to generate dicts using ordinary
+- [x] Add the `dict` macro in the IR parser to generate dicts using ordinary
   macro syntax
-- [ ] Remove special-cased dict parsing from the first-pass AST parser, and
+- [x] Remove special-cased dict parsing from the first-pass AST parser, and
   remove the wrapper for it from the IR parser
 
 ## Comptime

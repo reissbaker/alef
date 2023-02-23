@@ -761,19 +761,6 @@ fn list<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     }).parse(input, ctx)
 }
 
-fn dict<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
-    seq!(
-        ascii('{'),
-        ignore_whitespace(),
-        choose!(pairs_multiline, pairs_oneline, no_pairs),
-        ignore_whitespace(),
-        ascii('}'),
-    ).map(|output, span| {
-        let (_, (_, (pairs, (_, _)))) = output;
-        Ast::Dict(span.into(), pairs)
-    }).parse(input, ctx)
-}
-
 fn no_pairs<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Vec<((AstSpan, &'a str), Ast<'a>)>> {
     ignore_whitespace().map_span(|_| {
         vec![]
@@ -879,7 +866,6 @@ fn expr<'a>(input: &Span<'a>, ctx: &ParseContext) -> ParseResult<'a, Ast<'a>> {
     choose!(
         number,
         call,
-        dict,
         macro_call,
         id,
         list,

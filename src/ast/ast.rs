@@ -28,7 +28,6 @@ pub type DictPairs<'a> = Vec<((AstSpan, &'a str), Ast<'a>)>;
 pub enum Ast<'a> {
     Macro(AstSpan, Vec<Ast<'a>>),
     Call(AstSpan, Vec<Ast<'a>>),
-    Dict(AstSpan, DictPairs<'a>),
     List(AstSpan, Vec<Ast<'a>>),
     TypeAssert(AstSpan, Box<Ast<'a>>, &'a str),
     Identifier(AstSpan, &'a str),
@@ -43,7 +42,6 @@ impl<'a> Ast<'a> {
         match self {
             Ast::Macro(span, _) => span,
             Ast::Call(span, _) => span,
-            Ast::Dict(span, _) => span,
             Ast::List(span, _) => span,
             Ast::TypeAssert(span, _, _) => span,
             Ast::Identifier(span, _) => span,
@@ -63,14 +61,6 @@ impl<'a> std::fmt::Debug for Ast<'a> {
             }
             Ast::Call(span, vec) => {
                 write!(f, "Call({}-{}, {:?})", span.start, span.end, vec)?;
-            }
-            Ast::Dict(span, pairs) => {
-                let pair_str = pairs.into_iter().map(|pair| {
-                    let (key_span, key) = pair.0;
-                    format!("(Key({}-{}, {:?}), {:?})", key_span.start, key_span.end, key, pair.1)
-                }).collect::<Vec<String>>().join(",");
-
-                write!(f, "Dict({}-{}, [{:?}])", span.start, span.end, pair_str)?;
             }
             Ast::List(span, vec) => {
                 write!(f, "List({}-{}, {:?})", span.start, span.end, vec)?;

@@ -4,7 +4,7 @@ use crate::ast::ast::{Ast, AstSpan};
 
 pub type Id<'a> = (IrSpan<'a>, String);
 pub type DictPair<'a> = (Id<'a>, Ir<'a>);
-pub type DictPairs<'a> = Vec<DictPair<'a>>;
+pub type DictPairs<'a> = Vec<Box<DictPair<'a>>>;
 pub type IrResult<'a, T> = Result<T, IrError<'a>>;
 
 pub enum IrError<'a> {
@@ -230,6 +230,7 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
                 "when" => parse_when(source_path, &ir_span, &macro_name_span, args_iter),
                 "else" => parse_else(&ir_span, args_iter),
                 "case" => parse_case(source_path, &ir_span, &macro_name_span, args_iter),
+                "dict" => parse_dict_macro(source_path, &ir_span, &macro_name_span, args_iter),
                 _ => Err(IrError::ReferenceError(macro_name_span, "Unknown macro name")),
             }
         }
@@ -243,12 +244,6 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
             let head = ir_args.remove(0);
 
             Ok(Ir::Call(IrSpan::from_ast_span(source_path, span), Box::new(head), ir_args))
-        }
-        Ast::Dict(span, dict_pairs) => {
-            Ok(Ir::Dict(
-                IrSpan::from_ast_span(source_path, span),
-                to_ir_pairs(source_path, dict_pairs)?
-            ))
         }
         Ast::List(span, items) => {
             Ok(Ir::List(
@@ -423,6 +418,24 @@ fn expect_else<'a>(
     }
 }
 
+fn expect_dict_pair<'a>(
+    source_path: &'a str,
+    maybe_ir: Option<Ir<'a>>,
+    prev_span: &IrSpan<'a>,
+) -> IrResult<'a, (IrSpan<'a>, Box<DictPair<'a>>)> {
+    let msg = "Expect a dictionary pair";
+    let ir = expect_ir(
+        source_path,
+        maybe_ir,
+        prev_span,
+        msg,
+    )?;
+    match ir {
+        Ir::DictPair(span, pair_box) => Ok((span, pair_box)),
+        ir => Err(IrError::ArgumentError(*ir.get_span(), msg)),
+    }
+}
+
 fn unexpected_field_access<'a>(source_path: &'a str, span: &AstSpan) -> IrError<'a> {
     IrError::SyntaxError(
         IrSpan::from_ast_span(source_path, span),
@@ -453,16 +466,6 @@ fn expect_arglist<'a>(source_path: &'a str, list: Vec<Ir<'a>>) -> IrResult<'a, A
         }
     }
     return Ok(arglist);
-}
-fn to_ir_pairs<'a, 'b>(source_path: &'a str, pairs: &ast::ast::DictPairs<'b>) -> IrResult<'a, DictPairs<'a>> {
-    let mut vec = vec![];
-    for ((span, id_str), ast) in pairs.iter() {
-        vec.push((
-            (IrSpan::from_ast_span(source_path, &span), String::from(*id_str)),
-            ast_to_ir(source_path, ast)?
-        ))
-    }
-    Ok(vec)
 }
 
 fn parse_id<'a, 'b>(source_path: &'a str, span: &AstSpan, id: &'b str) -> Id<'a> {
@@ -615,5 +618,22 @@ fn parse_case<'a>(
         *macro_span,
         whens,
         else_clause,
+    ))
+}
+
+fn parse_dict_macro<'a>(
+    source_path: &'a str,
+    macro_span: &IrSpan<'a>,
+    macro_name_span: &IrSpan<'a>,
+    args_iter: IntoIter<Ir<'a>>
+) -> IrResult<'a, Ir<'a>> {
+    let mut prev_span = *macro_name_span;
+    Ok(Ir::Dict(
+        *macro_span,
+        args_iter.map(|ir| -> IrResult<'a, Box<DictPair<'a>>> {
+            let (span, pair_box) = expect_dict_pair(source_path, Some(ir), &prev_span)?;
+            prev_span = span;
+            Ok(pair_box)
+        }).collect::<IrResult<'a, Vec<Box<DictPair<'a>>>>>()?
     ))
 }
