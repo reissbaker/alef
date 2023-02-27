@@ -1,5 +1,4 @@
 use std::vec::IntoIter;
-use crate::ast;
 use crate::ast::ast::{Ast, AstSpan};
 
 pub type Id<'a> = (IrSpan<'a>, String);
