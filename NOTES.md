@@ -115,6 +115,22 @@ Refactor steps:
   remove the wrapper for it from the IR parser
 - [ ] Add symbol parsing
 
+## Types
+
+A cast should actually do a type intersection; it's the original type AND the
+casted type. This allows static inference with various numeric types, e.g.
+
+```
+{let a = <u32 0>} ;; type is {& u32 (ustatic 0) }
+```
+
+The static types don't need size modifiers: they're 64-bit when left alone, and
+the smallest-sized numeric value when combined. This should be true for numeric
+types in general: treat the bit type as a giant union of all possible numbers
+from the smallest to the largest, and intersecting them just narrows the
+allowable numbers. However, memory layout is *not* narrowable: uints can't be
+intersected with ints or floats.
+
 ## Comptime
 It would be neat to be super-comptime-aware like Zig. Typechecker should detect
 if a function is pure, and if it is, it should pre-compute returns for any

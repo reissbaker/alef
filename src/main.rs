@@ -1,6 +1,7 @@
 mod ast;
 mod macros;
 mod ir;
+mod types;
 
 use std::fs;
 use miette::{NamedSource, Diagnostic, SourceSpan, ErrReport};
