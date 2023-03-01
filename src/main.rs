@@ -1,13 +1,15 @@
 mod ast;
 mod macros;
 mod ir;
+mod symbols;
 mod types;
 
 use std::fs;
 use miette::{NamedSource, Diagnostic, SourceSpan, ErrReport};
 use ast::parser::parse;
 use ast::errors::format_error;
-use ir::to_ir_vec;
+use symbols::SymbolTable;
+use ir::{to_ir_vec, DisplayFromSymbol};
 use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
@@ -42,8 +44,9 @@ fn main() -> miette::Result<()> {
             })?;
 
             println!("Parse success! Converting to IR...");
+            let mut table = SymbolTable::new();
 
-            let ir = to_ir_vec(&path, &parsed).map_err(|e| {
+            let ir = to_ir_vec(&path, &mut table, &parsed).map_err(|e| {
                 let span = e.get_span();
                 let file = fs::read_to_string(span.source_path).expect("file does not exist");
                 ErrReport::from(PrettyParseError {
@@ -55,7 +58,7 @@ fn main() -> miette::Result<()> {
 
             println!("IR convert success!\nIR:");
             for (pos, expr) in ir.iter().enumerate() {
-                println!("\n{}: {:?}", pos + 1, expr);
+                println!("\n{}: {:?}", pos + 1, expr.to_pretty_string(&table));
             }
 
             Ok(())

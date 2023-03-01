@@ -1,10 +1,31 @@
 use std::vec::IntoIter;
 use crate::ast::ast::{Ast, AstSpan};
+use crate::symbols::{Symbol, SymbolTable};
 
-pub type Id<'a> = (IrSpan<'a>, String);
+pub type Id<'a> = (IrSpan<'a>, Symbol);
 pub type DictPair<'a> = (Id<'a>, Ir<'a>);
 pub type DictPairs<'a> = Vec<Box<DictPair<'a>>>;
 pub type IrResult<'a, T> = Result<T, IrError<'a>>;
+
+pub trait DisplayFromSymbol {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String;
+}
+
+impl<'a> DisplayFromSymbol for Id<'a> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        table.string(&self.1).unwrap().clone()
+    }
+}
+
+impl<'a> DisplayFromSymbol for DictPair<'a> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        format!(
+            "({}, {})",
+            self.0.to_pretty_string(table),
+            self.1.to_pretty_string(table),
+        )
+    }
+}
 
 pub enum IrError<'a> {
     ArgumentError(IrSpan<'a>, &'static str),
@@ -57,16 +78,45 @@ impl<'a> IrSpan<'a> {
     }
 }
 
+impl<'a> DisplayFromSymbol for IrSpan<'a> {
+    fn to_pretty_string(&self, _: &SymbolTable) -> String {
+        format!("IrSpan({}, {})", self.start, self.end)
+    }
+}
+
 #[derive(Debug)]
 pub struct TypeAssert<'a> {
     typename: Id<'a>,
     id: Id<'a>,
 }
 
+impl<'a> DisplayFromSymbol for TypeAssert<'a> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        format!(
+            "TypeArg({}, {})",
+            self.typename.to_pretty_string(table),
+            self.id.to_pretty_string(table),
+        )
+    }
+}
+
 #[derive(Debug)]
 pub enum LambdaArg<'a> {
     Typed(TypeAssert<'a>),
     Untyped(Id<'a>),
+}
+
+impl<'a> DisplayFromSymbol for LambdaArg<'a> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        match self {
+            LambdaArg::Typed(assert) => {
+                format!("LambdaArg::Typed({})", assert.to_pretty_string(table))
+            }
+            LambdaArg::Untyped(id) => {
+                format!("LambdaArg::Untyped({})", id.to_pretty_string(table))
+            }
+        }
+    }
 }
 
 pub type ArgList<'a> = Vec<LambdaArg<'a>>;
@@ -78,10 +128,31 @@ pub struct When<'a> {
     pub body: Vec<Ir<'a>>,
 }
 
+impl<'a> DisplayFromSymbol for When<'a> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        format!(
+            "When(span: {}, condition: {}, body: {})",
+            self.span.to_pretty_string(table),
+            self.condition.to_pretty_string(table),
+            self.body.to_pretty_string(table),
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct Else<'a> {
     pub span: IrSpan<'a>,
     pub body: Vec<Ir<'a>>,
+}
+
+impl<'a> DisplayFromSymbol for Else<'a> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        format!(
+            "Else(span: {}, body: {})",
+            self.span.to_pretty_string(table),
+            self.body.to_pretty_string(table),
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -103,6 +174,29 @@ pub enum Ir<'a> {
     Int(IrSpan<'a>, i64),
     Float(IrSpan<'a>, f64),
     Nil(IrSpan<'a>),
+}
+
+impl<'a, T: DisplayFromSymbol> DisplayFromSymbol for Vec<T> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        format!("Vec({})", self.into_iter().map(|ir| {
+            ir.to_pretty_string(table)
+        }).collect::<Vec<String>>().join(", "))
+    }
+}
+impl<'a, T: DisplayFromSymbol> DisplayFromSymbol for Option<T> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        match self {
+            None => "None".to_string(),
+            Some(v) => {
+                format!("Some({})", v.to_pretty_string(table))
+            }
+        }
+    }
+}
+impl<'a, T: DisplayFromSymbol> DisplayFromSymbol for Box<T> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        (**self).to_pretty_string(table)
+    }
 }
 
 impl<'a> Ir<'a> {
@@ -129,11 +223,112 @@ impl<'a> Ir<'a> {
     }
 }
 
-pub fn to_ir_vec<'a, 'b>(source_path: &'a str, ast_vec: &Vec<Ast<'b>>) -> IrResult<'a, Vec<Ir<'a>>> {
-    iter_to_ir_vec(source_path, ast_vec.iter())
+impl<'a> DisplayFromSymbol for Ir<'a> {
+    fn to_pretty_string(&self, table: &SymbolTable) -> String {
+        match self {
+            Ir::Let(span, id, ir_box) => {
+                format!(
+                    "Ir::Let({}, id: {}, val: {})",
+                    span.to_pretty_string(table),
+                    id.to_pretty_string(table),
+                    ir_box.to_pretty_string(table),
+                )
+            }
+            Ir::Set(span, id, ir_box) => {
+                format!(
+                    "Ir::Set({}, id: {}, val: {})",
+                    span.to_pretty_string(table),
+                    id.to_pretty_string(table),
+                    ir_box.to_pretty_string(table),
+                )
+            }
+            Ir::Lambda(span, args, body) => {
+                format!(
+                    "Ir::Lambda({}, args: {}, body: {})",
+                    span.to_pretty_string(table),
+                    args.to_pretty_string(table),
+                    body.to_pretty_string(table)
+                )
+            }
+            Ir::Call(span, head, args) => {
+                format!(
+                    "Ir::Call({}, head: {}, args: {})",
+                    span.to_pretty_string(table),
+                    head.to_pretty_string(table),
+                    args.to_pretty_string(table),
+                )
+            }
+            Ir::Case(span, arms, maybe_else) => {
+                format!(
+                    "Ir::Case({}, arms: {}, maybe_else: {})",
+                    span.to_pretty_string(table),
+                    arms.to_pretty_string(table),
+                    maybe_else.to_pretty_string(table),
+                )
+            }
+            Ir::When(box_when) => {
+                format!("Ir::When({})", box_when.to_pretty_string(table))
+            }
+            Ir::Else(span, body) => {
+                format!(
+                    "Ir::Else({}, body: {})",
+                    span.to_pretty_string(table),
+                    body.to_pretty_string(table)
+                )
+            }
+            Ir::Dict(span, pairs) => {
+                format!(
+                    "Ir::Dict({}, pairs: {})",
+                    span.to_pretty_string(table),
+                    pairs.to_pretty_string(table)
+                )
+            }
+            Ir::DictPair(span, pair) => {
+                format!("Ir::DictPair({}, {})", span.to_pretty_string(table), pair.to_pretty_string(table))
+            }
+            Ir::List(span, vec) => {
+                format!("Ir::List({}, {})", span.to_pretty_string(table), vec.to_pretty_string(table))
+            }
+            Ir::TypeAssert(span, assert) => {
+                format!("Ir::TypeAssert({}, {})", span.to_pretty_string(table), assert.to_pretty_string(table))
+            }
+            Ir::Id(id) => {
+                format!("Ir::Id({})", id.to_pretty_string(table))
+            }
+            Ir::FieldAccess(span, ir_box, id) => {
+                format!(
+                    "Ir::FieldAccess({}, ir: {}, id: {})",
+                    span.to_pretty_string(table),
+                    ir_box.to_pretty_string(table),
+                    id.to_pretty_string(table)
+                )
+            }
+            Ir::TraitRef(span, ir_box, id) => {
+                format!(
+                    "Ir::TraitRef({}, ir: {}, id: {})",
+                    span.to_pretty_string(table),
+                    ir_box.to_pretty_string(table),
+                    id.to_pretty_string(table)
+                )
+            }
+            Ir::Int(span, val) => {
+                format!("Ir::Int({}, {})", span.to_pretty_string(table), val)
+            }
+            Ir::Float(span, val) => {
+                format!("Ir::Float({}, {})", span.to_pretty_string(table), val)
+            }
+            Ir::Nil(span) => {
+                format!("Ir::Nil({})", span.to_pretty_string(table))
+            }
+        }
+    }
 }
 
-fn iter_to_ir_vec<'a, 'b>(source_path: &'a str, ast_iter: std::slice::Iter<'b, Ast<'b>>) -> IrResult<'a, Vec<Ir<'a>>> {
+pub fn to_ir_vec<'a, 'b>(source_path: &'a str, table: &mut SymbolTable, ast_vec: &Vec<Ast<'b>>) -> IrResult<'a, Vec<Ir<'a>>> {
+    iter_to_ir_vec(source_path, table, ast_vec.iter())
+}
+
+fn iter_to_ir_vec<'a, 'b>(source_path: &'a str, table: &mut SymbolTable, ast_iter: std::slice::Iter<'b, Ast<'b>>) -> IrResult<'a, Vec<Ir<'a>>> {
     let mut coalesced = vec![];
     let mut last_ast_span;
 
@@ -154,10 +349,11 @@ fn iter_to_ir_vec<'a, 'b>(source_path: &'a str, ast_iter: std::slice::Iter<'b, A
                             start: last_ast_span.start,
                             end: span.end,
                         };
+                        let symbol = table.symbol((*id_str).into());
                         coalesced.push(Ir::FieldAccess(
                             full_span,
                             Box::new(last),
-                            (IrSpan::from_ast_span(source_path, &span), (*id_str).into())
+                            (IrSpan::from_ast_span(source_path, &span), symbol)
                         ));
                     }
                 }
@@ -174,16 +370,17 @@ fn iter_to_ir_vec<'a, 'b>(source_path: &'a str, ast_iter: std::slice::Iter<'b, A
                             start: last_ast_span.start,
                             end: span.end,
                         };
+                        let symbol = table.symbol((*id_str).into());
                         coalesced.push(Ir::TraitRef(
                             full_span,
                             Box::new(last),
-                            (IrSpan::from_ast_span(source_path, &span), (*id_str).into()),
+                            (IrSpan::from_ast_span(source_path, &span), symbol),
                         ))
                     }
                 }
             }
             default => {
-                coalesced.push(ast_to_ir(source_path, &default)?);
+                coalesced.push(ast_to_ir(source_path, table, &default)?);
             }
         }
     }
@@ -191,7 +388,7 @@ fn iter_to_ir_vec<'a, 'b>(source_path: &'a str, ast_iter: std::slice::Iter<'b, A
     Ok(coalesced)
 }
 
-fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>> {
+fn ast_to_ir<'a, 'b>(source_path: &'a str, table: &mut SymbolTable, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>> {
     match ast {
         Ast::Macro(span, args) => {
             // Empty macro = actually an empty dict
@@ -199,7 +396,7 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
                 return Ok(Ir::Dict(IrSpan::from_ast_span(source_path, span), vec![]));
             }
             // Macro-expand everything before continuing.
-            let expanded = to_ir_vec(source_path, args)?;
+            let expanded = to_ir_vec(source_path, table, args)?;
 
             // For now, just unswap the head if it's a trait function reference in : form. In the
             // future you should be actually tracking context, types, etc so you can look up the
@@ -219,8 +416,9 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
             // We need to do this conversion for most of the arms of the match, so w/e, let's just
             // do it here for all of them for simplicity
             let ir_span = IrSpan::from_ast_span(source_path, span);
+            let macro_name_str = table.string(&macro_name).unwrap().as_str();
 
-            match macro_name.as_str() {
+            match macro_name_str {
                 "let" => parse_let(source_path, &ir_span, args_iter),
                 "set" => parse_set(source_path, &ir_span, args_iter),
                 "def" => parse_def(source_path, &ir_span, &macro_name_span, args_iter),
@@ -239,7 +437,7 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
                 return Ok(Ir::Nil(IrSpan::from_ast_span(source_path, span)));
             }
             // Otherwise, parse the call!
-            let mut ir_args = to_ir_vec(source_path, args)?;
+            let mut ir_args = to_ir_vec(source_path, table, args)?;
             let head = ir_args.remove(0);
 
             Ok(Ir::Call(IrSpan::from_ast_span(source_path, span), Box::new(head), ir_args))
@@ -247,19 +445,20 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
         Ast::List(span, items) => {
             Ok(Ir::List(
                 IrSpan::from_ast_span(source_path, span),
-                to_ir_vec(source_path, items)?
+                to_ir_vec(source_path, table, items)?
             ))
         }
         Ast::TypeAssert(span, type_ast, id_str) => {
-            let type_ir = ast_to_ir(source_path, type_ast)?;
+            let type_ir = ast_to_ir(source_path, table, type_ast)?;
             let ir_span = IrSpan::from_ast_span(source_path, span);
+            let symbol = table.symbol(id_str.to_string());
             Ok(Ir::TypeAssert(
                 ir_span,
                 TypeAssert {
                     typename: expect_id(source_path, Some(type_ir), &ir_span)?,
                     // TODO this span is wrong; the AST needs to encode the real span and not just
                     // the string id
-                    id: (IrSpan::from_ast_span(source_path, span), id_str.to_string())
+                    id: (IrSpan::from_ast_span(source_path, span), symbol)
                 }
             ))
         }
@@ -269,7 +468,7 @@ fn ast_to_ir<'a, 'b>(source_path: &'a str, ast: &Ast<'b>) -> IrResult<'a, Ir<'a>
             Err(unexpected_trait_ref(source_path, span))
         }
         Ast::Identifier(span, id_str) => {
-            Ok(Ir::Id(parse_id(source_path, span, id_str)))
+            Ok(Ir::Id(parse_id(source_path, table, span, id_str)))
         }
         Ast::Field(span, _) => {
             // If we got a field access here, there was no preceding expr to combine it with (or
@@ -349,7 +548,7 @@ fn expect_id<'a>(
     source_path: &'a str,
     maybe_ir: Option<Ir<'a>>,
     prev_span: &IrSpan<'a>,
-) -> IrResult<'a, (IrSpan<'a>, String)> {
+) -> IrResult<'a, Id<'a>> {
     let ir = expect_ir(
         source_path,
         maybe_ir,
@@ -467,8 +666,9 @@ fn expect_arglist<'a>(source_path: &'a str, list: Vec<Ir<'a>>) -> IrResult<'a, A
     return Ok(arglist);
 }
 
-fn parse_id<'a, 'b>(source_path: &'a str, span: &AstSpan, id: &'b str) -> Id<'a> {
-    (IrSpan::from_ast_span(source_path, &span), (*id).into())
+fn parse_id<'a, 'b>(source_path: &'a str, table: &mut SymbolTable, span: &AstSpan, id: &'b str) -> Id<'a> {
+    let symbol = table.symbol((*id).into());
+    (IrSpan::from_ast_span(source_path, &span), symbol)
 }
 
 fn parse_pair<'a>(source_path: &'a str, span: &IrSpan<'a>, macro_name_span: &IrSpan<'a>, mut args_iter: IntoIter<Ir<'a>>) -> IrResult<'a, Ir<'a>> {
