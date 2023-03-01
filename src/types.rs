@@ -1,5 +1,6 @@
-use crate::ir::Ir;
 use std::collections::HashMap;
+use crate::ir::Ir;
+use crate::symbols::Symbol;
 
 pub struct TypeCondArm {
     condition: Type,
@@ -39,7 +40,7 @@ pub enum Type {
     Sum(Vec<Type>),
     Intersection(Vec<Type>),
     Fn(Vec<Type>, Box<Type>),
-    Structural(Vec<(String, Type)>),
+    Structural(Vec<(Symbol, Type)>),
     Cond(Vec<TypeCondArm>, Option<TypeElseArm>),
     Where(WhereType),
     Kind(Vec<TypeArg>),
@@ -48,11 +49,11 @@ pub enum Type {
 
 pub struct Scope {
     parent: Box<Scope>,
-    local_scope: HashMap<String, Type>,
+    local_scope: HashMap<Symbol, Type>,
 }
 
 impl Scope {
-    fn get_type(&self, id: String) -> Option<&Type> {
+    fn get_type(&self, id: Symbol) -> Option<&Type> {
         self.local_scope.get(&id)
     }
 }
