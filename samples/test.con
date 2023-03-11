@@ -21,7 +21,7 @@
 
 (callback 2)
 
-{def not-empty? [list]
+{def not-empty? [<List list>]
   (!= (len list) 0)
 }
 
