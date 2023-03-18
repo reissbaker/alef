@@ -10,7 +10,7 @@ use ast::parser::parse;
 use ast::errors::format_error;
 use symbols::SymbolTable;
 use ir::{to_ir_vec, DisplayFromSymbol};
-use types::{Signature, Nominal, TypeComparison, TypeVal, Primitive, Algebraic, Static};
+use types::{Scope, Signature, Nominal, TypeComparison, TypeVal, Primitive, Algebraic, Static};
 use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
@@ -70,18 +70,20 @@ fn main() -> miette::Result<()> {
             let i9_and_i = TypeVal::Algebraic(Algebraic::Intersection(
                     vec![i.clone(), i_9.clone()]
             ));
-            println!("\n\n9 is subtype of i64: {}", i_9.is_subtype(&i));
-            println!("i64 is subtype of i9: {}", i.is_subtype(&i_9));
 
-            println!("\n\n9 is subtype of sum(i64, 9): {}", i_9.is_subtype(&i9_or_i));
-            println!("i64 is subtype of sum(i64, 9): {}", i.is_subtype(&i9_or_i));
-            println!("sum(i64, 9) is subtype of i64: {}", i9_or_i.is_subtype(&i));
-            println!("sum(i64, 9) is subtype of 9: {}", i9_or_i.is_subtype(&i_9));
+            let scope = Scope::new();
+            println!("\n\n9 is subtype of i64: {}", i_9.is_subtype(&scope, &i));
+            println!("i64 is subtype of i9: {}", i.is_subtype(&scope, &i_9));
 
-            println!("\n\n9 is subtype of intersect(i64, 9): {}", i_9.is_subtype(&i9_and_i));
-            println!("i64 is subtype of intersect(i64, 9): {}", i.is_subtype(&i9_and_i));
-            println!("intersect(i64, 9) is subtype of i64: {}", i9_and_i.is_subtype(&i));
-            println!("intersect(i64, 9) is subtype of 9: {}", i9_and_i.is_subtype(&i_9));
+            println!("\n\n9 is subtype of sum(i64, 9): {}", i_9.is_subtype(&scope, &i9_or_i));
+            println!("i64 is subtype of sum(i64, 9): {}", i.is_subtype(&scope, &i9_or_i));
+            println!("sum(i64, 9) is subtype of i64: {}", i9_or_i.is_subtype(&scope, &i));
+            println!("sum(i64, 9) is subtype of 9: {}", i9_or_i.is_subtype(&scope, &i_9));
+
+            println!("\n\n9 is subtype of intersect(i64, 9): {}", i_9.is_subtype(&scope, &i9_and_i));
+            println!("i64 is subtype of intersect(i64, 9): {}", i.is_subtype(&scope, &i9_and_i));
+            println!("intersect(i64, 9) is subtype of i64: {}", i9_and_i.is_subtype(&scope, &i));
+            println!("intersect(i64, 9) is subtype of 9: {}", i9_and_i.is_subtype(&scope, &i_9));
 
             let sig_i = TypeVal::Signature(Signature::new(
                 vec![ i.clone() ],
@@ -91,16 +93,25 @@ fn main() -> miette::Result<()> {
                 vec![ i_9.clone() ],
                 i_9.clone(),
             ));
-            println!("\n\n(i64) -> i64 is subtype of (9) -> 9: {}", sig_i.is_subtype(&sig_9));
-            println!("(9) -> 9 is subtype of (i64) -> i64: {}", sig_9.is_subtype(&sig_i));
+            println!("\n\n(i64) -> i64 is subtype of (9) -> 9: {}", sig_i.is_subtype(&scope, &sig_9));
+            println!("(9) -> 9 is subtype of (i64) -> i64: {}", sig_9.is_subtype(&scope, &sig_i));
 
             let bitmap_sym = table.symbol("Bitmap".into());
             let tex_sym = table.symbol("Texture".into());
             let Bitmap = TypeVal::Nominal(Nominal::new(bitmap_sym));
             let Texture = TypeVal::Nominal(Nominal::new(tex_sym));
-            println!("\n\nBitmap nominal is subtype of Texture nominal: {}", Bitmap.is_subtype(&Texture));
-            println!("Texture nominal is subtype of Bitmap nominal: {}", Texture.is_subtype(&Bitmap));
-            println!("Texture nominal is subtype of Texture nominal: {}", Texture.is_subtype(&Texture));
+            println!("\n\nBitmap nominal is subtype of Texture nominal: {}", Bitmap.is_subtype(&scope, &Texture));
+            println!("Texture nominal is subtype of Bitmap nominal: {}", Texture.is_subtype(&scope, &Bitmap));
+            println!("Texture nominal is subtype of Texture nominal: {}", Texture.is_subtype(&scope, &Texture));
+
+            let mut ref_scope = Scope::new();
+            let type_ref = table.symbol("T".into());
+            ref_scope.insert(type_ref, Bitmap.clone());
+            let BitmapRef = TypeVal::Reference(type_ref);
+            println!("\n\nBitmap reference is subtype of Bitmap nominal: {}", BitmapRef.is_subtype(&ref_scope, &Bitmap));
+            println!("Bitmap nominal is subtype of Bitmap reference: {}", Bitmap.is_subtype(&ref_scope, &BitmapRef));
+            println!("Bitmap reference is a subtype of Texture: {}", BitmapRef.is_subtype(&ref_scope, &Texture));
+            println!("Texture nominal is a subtype of BitmapRef: {}", Texture.is_subtype(&ref_scope, &BitmapRef));
 
             Ok(())
         }
