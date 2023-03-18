@@ -1,5 +1,6 @@
 mod ast;
 mod macros;
+mod scope;
 mod ir;
 mod symbols;
 mod types;
@@ -10,7 +11,8 @@ use ast::parser::parse;
 use ast::errors::format_error;
 use symbols::SymbolTable;
 use ir::{to_ir_vec, DisplayFromSymbol};
-use types::{Scope, Signature, Nominal, TypeComparison, TypeVal, Primitive, Algebraic, Static};
+use types::{Signature, Nominal, TypeComparison, TypeVal, Primitive, Algebraic, Static};
+use scope::Scope;
 use thiserror::Error;
 
 #[derive(Error, Debug, Diagnostic)]
