@@ -1,15 +1,20 @@
 use std::collections::HashMap;
 use crate::symbols::Symbol;
 
-pub struct Scope<Value> {
-    parent: Option<Box<Scope<Value>>>,
+pub struct Scope<'a, Value> {
+    parent: Option<Box<&'a Scope<'a, Value>>>,
     local_scope: HashMap<Symbol, Value>,
 }
 
-impl<Value> Scope<Value> {
-    pub fn new() -> Scope<Value> {
+impl<'a, Value> Scope<'a, Value> {
+    pub fn new() -> Scope<'a, Value> {
         Scope { parent: None, local_scope: HashMap::new() }
     }
+
+    pub fn child(&'a self) -> Scope<'a, Value> {
+        Scope { parent: Some(Box::new(self)), local_scope: HashMap::new() }
+    }
+
     pub fn lookup(&self, id: Symbol) -> Option<&Value> {
         self.local_scope.get(&id).or_else(|| {
             self.parent.as_ref().and_then(|parent| {
